@@ -2,24 +2,35 @@
 set -euo pipefail
 
 # Automated PostgreSQL + uploaded documents backup script for INSA Racing Achats.
-# Recommended cron entry (daily at 03:15):
-#   15 3 * * * cd /opt/web_achats && ./deploy/backup.sh >> /var/log/insa-achats-backup.log 2>&1
+# Recommended cron entry (daily at 03:00):
+#   0 3 * * * /home/ubuntu/insa-racing-budget/deploy/backup.sh >> /var/log/insa-achats-backup.log 2>&1
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 cd "${REPO_DIR}"
 
-if [ -f .env ]; then
-  set -a
-  # shellcheck disable=SC1091
-  . ./.env
-  set +a
-fi
+read_env_var() {
+  local key="$1"
+  local fallback="$2"
+  if [ -f .env ]; then
+    local val
+    val="$(grep -E "^${key}=" .env | tail -n 1 | cut -d= -f2- | tr -d '\r')"
+    val="${val#\"}"
+    val="${val%\"}"
+    val="${val#\'}"
+    val="${val%\'}"
+    if [ -n "${val}" ]; then
+      printf '%s' "${val}"
+      return 0
+    fi
+  fi
+  printf '%s' "${fallback}"
+}
 
 BACKUP_DIR="${BACKUP_DIR:-${REPO_DIR}/backups}"
 RETENTION_DAYS="${RETENTION_DAYS:-30}"
-POSTGRES_USER="${POSTGRES_USER:-insa_achats}"
-POSTGRES_DB="${POSTGRES_DB:-insa_achats}"
+POSTGRES_USER="$(read_env_var POSTGRES_USER insa_achats)"
+POSTGRES_DB="$(read_env_var POSTGRES_DB insa_achats)"
 STAMP="$(date +%F_%H%M%S)"
 
 mkdir -p "${BACKUP_DIR}"
