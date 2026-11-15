@@ -1,0 +1,80 @@
+# Local test environment with PostgreSQL + Mailpit SMTP mail catcher
+# Start: docker compose -f docker-compose.local.yml up -d --build
+# App:   http://localhost:3000
+# Mail:  http://localhost:8025
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-insa_achats}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-insa_local_dev}
+      POSTGRES_DB: ${POSTGRES_DB:-insa_achats}
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - pgdata_local:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-insa_achats} -d ${POSTGRES_DB:-insa_achats}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  mailpit:
+    image: axllent/mailpit:latest
+    restart: unless-stopped
+    environment:
+      MP_MAX_MESSAGES: "500"
+      MP_SMTP_AUTH_ACCEPT_ANY: "1"
+      MP_SMTP_AUTH_ALLOW_INSECURE: "1"
+    ports:
+      - "127.0.0.1:8025:8025"
+      - "127.0.0.1:1025:1025"
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mailpit:
+        condition: service_started
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      PORT: 3000
+      APP_URL: ${LOCAL_APP_URL:-http://localhost:3000}
+      COOKIE_SECURE: "false"
+      SESSION_SECRET: ${LOCAL_SESSION_SECRET:-local_dev_only_session_secret_do_not_use_in_production_64chars}
+      MASTER_EMAIL: ${LOCAL_MASTER_EMAIL:-master@insa-racing.fr}
+      MASTER_PASSWORD: ${LOCAL_MASTER_PASSWORD:-InsaLocal2026!}
+      MASTER_NAME: ${LOCAL_MASTER_NAME:-Master Admin (Local Test)}
+      MASTER_TITLE: ${LOCAL_MASTER_TITLE:-Team Master}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-insa_achats}:${POSTGRES_PASSWORD:-insa_local_dev}@postgres:5432/${POSTGRES_DB:-insa_achats}
+      SMTP_HOST: mailpit
+      SMTP_PORT: "1025"
+      SMTP_SECURE: "false"
+      SMTP_IGNORE_TLS: "true"
+      SMTP_AUTH: "false"
+      SMTP_USER: contact@insa-racing.fr
+      SMTP_PASS: local-mailpit-dev
+      SMTP_FROM: '"INSA Racing Achats (Local)" <contact@insa-racing.fr>'
+      UPLOAD_DIR: /data/uploads
+      MAX_FILE_SIZE_MB: "20"
+    ports:
+      - "127.0.0.1:3000:3000"
+    volumes:
+      - uploads_data_local:/data/uploads
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/api/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 15s
+
+volumes:
+  pgdata_local:
+  uploads_data_local:

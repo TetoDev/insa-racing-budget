@@ -1,0 +1,19 @@
+{$DOMAIN:localhost} {
+	encode gzip zstd
+
+	request_body {
+		max_size 100MB
+	}
+
+	header {
+		-Server
+		X-Content-Type-Options nosniff
+		X-Frame-Options DENY
+		Referrer-Policy strict-origin-when-cross-origin
+		Permissions-Policy "camera=(), microphone=(), geolocation=()"
+	}
+
+	reverse_proxy app:3000 {
+		header_up X-Real-IP {remote_host}
+	}
+}
