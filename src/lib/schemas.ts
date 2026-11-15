@@ -1,5 +1,13 @@
 import { z } from "zod";
-import { ASSIGNABLE_ROLES, BUDGET_SECTIONS, DEPARTMENTS, ENTRY_CATEGORIES, RATE_PERIODS } from "./constants";
+import {
+  ASSIGNABLE_ROLES,
+  BUDGET_SECTIONS,
+  DEPARTMENTS,
+  ENTRY_CATEGORIES,
+  ENTRY_STATUSES,
+  RATE_PERIODS,
+  REQUEST_STATUSES
+} from "./constants";
 
 const departmentIds = DEPARTMENTS.map(d => d.id) as [string, ...string[]];
 const entryCategoryIds = ENTRY_CATEGORIES.map(c => c.id) as [string, ...string[]];
@@ -119,4 +127,94 @@ export const updateDepartmentBudgetsSchema = z.object({
     )
     .min(1)
     .max(DEPARTMENTS.length)
+});
+
+export const masterOptionInputSchema = z.object({
+  id: z.string().uuid().optional().nullable(),
+  clientKey: z.string().trim().min(1),
+  label: z.string().trim().min(1, "Option title/supplier is required").max(160),
+  productUrl: z
+    .string()
+    .trim()
+    .max(500)
+    .optional()
+    .nullable()
+    .refine(val => !val || /^https?:\/\//i.test(val), "Product URL must start with http:// or https://"),
+  priceEur: z.string().trim().min(1, "Option price in EUR is required"),
+  drawbacks: z.string().trim().max(1500).default(""),
+  notes: z.string().trim().max(1000).optional().nullable()
+});
+
+export const masterRequestAttachmentUpdateSchema = z.object({
+  id: z.string().uuid(),
+  originalName: z.string().trim().min(1, "Attachment name is required").max(180),
+  kind: z.enum(["photo", "document", "invoice", "fee_proof"])
+});
+
+export const masterUpdateRequestSchema = z.object({
+  requestCode: z
+    .string()
+    .trim()
+    .min(2, "Request ID is required")
+    .max(64)
+    .regex(/^[A-Za-z0-9_-]+$/, "Request ID may only contain letters, numbers, hyphens, and underscores."),
+  seasonId: z.string().uuid(),
+  department: z.enum(
+    departmentIds as [typeof DEPARTMENTS[number]["id"], ...typeof DEPARTMENTS[number]["id"][]]
+  ),
+  carSystem: z.string().trim().max(120).default(""),
+  title: z.string().trim().min(1, "Title is required").max(200),
+  explanation: z.string().trim().max(10000).default(""),
+  status: z.enum(REQUEST_STATUSES),
+  creatorId: z.string().uuid(),
+  hasApproverResponse: z.boolean(),
+  selectedOptionClientKey: z.string().trim().optional().nullable(),
+  selectedOptionPriceEur: z.string().trim().optional().nullable(),
+  shippingEur: z.string().trim().min(1, "Shipping fee is required (use 0 for none)"),
+  importFeeEur: z.string().trim().min(1, "Import fee is required (use 0 for none)"),
+  finalAmountEur: z.string().trim().optional().nullable(),
+  orderedById: z.string().uuid().optional().nullable(),
+  orderedAt: z.string().trim().optional().nullable(),
+  invoicedById: z.string().uuid().optional().nullable(),
+  invoicedAt: z.string().trim().optional().nullable(),
+  archivedAt: z.string().trim().optional().nullable(),
+  createdAt: z.string().trim().min(1, "Created timestamp is required"),
+  options: z.array(masterOptionInputSchema).max(20),
+  attachmentUpdates: z.array(masterRequestAttachmentUpdateSchema).default([]),
+  removeAttachmentIds: z.array(z.string().uuid()).default([]),
+  editReason: z.string().trim().max(1000).optional().default("")
+});
+
+export const masterEntryAttachmentUpdateSchema = z.object({
+  id: z.string().uuid(),
+  originalName: z.string().trim().min(1, "Attachment name is required").max(180),
+  kind: z.enum(["supporting_doc", "invoice"])
+});
+
+export const masterUpdateEntrySchema = z.object({
+  entryCode: z
+    .string()
+    .trim()
+    .min(2, "Entry ID is required")
+    .max(64)
+    .regex(/^[A-Za-z0-9_-]+$/, "Entry ID may only contain letters, numbers, hyphens, and underscores."),
+  seasonId: z.string().uuid(),
+  title: z.string().trim().min(1, "Title is required").max(200),
+  category: entryCategorySchema,
+  status: z.enum(ENTRY_STATUSES),
+  initialAmountEur: z.string().trim().min(1, "Initial amount in EUR is required"),
+  confirmedAmountEur: z.string().trim().optional().nullable(),
+  entryDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Valid date (YYYY-MM-DD) is required"),
+  comment: z.string().trim().max(5000).default(""),
+  createdById: z.string().uuid(),
+  confirmedById: z.string().uuid().optional().nullable(),
+  confirmedAt: z.string().trim().optional().nullable(),
+  createdAt: z.string().trim().min(1, "Created timestamp is required"),
+  attachmentUpdates: z.array(masterEntryAttachmentUpdateSchema).default([]),
+  removeAttachmentIds: z.array(z.string().uuid()).default([]),
+  editReason: z.string().trim().max(1000).optional().default("")
+});
+
+export const masterDeleteRecordSchema = z.object({
+  reason: z.string().trim().max(1000).optional().default("")
 });

@@ -1,23 +1,34 @@
-import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, ne, sql } from "drizzle-orm";
 import { computeBudgetAnalytics } from "~/lib/budget-analytics";
 import {
   DEPARTMENT_MAP,
   ENTRY_CATEGORY_MAP,
+  ENTRY_STATUS_LABELS,
   type DepartmentId,
   type EntryCategory,
+  type EntryStatus,
   type RatePeriod
 } from "~/lib/constants";
-import { formatEur, parseEurToCents, toIsoDateInput } from "~/lib/format";
+import { formatDateTime, formatEur, parseEurToCents, toIsoDateInput } from "~/lib/format";
+import {
+  diffRecordFields,
+  formatDiffSummaryLines,
+  parseOptionalTimestamp,
+  parseRequiredTimestamp
+} from "~/lib/master-diff";
 import { canTransitionEntry } from "~/lib/workflow";
+import { purgeEntityAttachments, saveUploadGroups, syncEntityAttachments } from "./attachment-sync";
 import { recordAuditLog } from "./audit";
 import type { PublicUser } from "./auth";
 import { getDb } from "./db";
 import { ensureDbReady } from "./db/bootstrap";
 import {
   attachments,
+  auditLogs,
   buyingOptions,
   departmentBudgets,
   entryCounters,
+  entryTimeline,
   moneyEntries,
   purchaseRequests,
   seasons,
@@ -124,6 +135,20 @@ export async function createMoneyEntry(
       }
 
       const catLabel = ENTRY_CATEGORY_MAP[params.category].label;
+      await tx.insert(entryTimeline).values({
+        entryId: entryRow.id,
+        actorId: actor.id,
+        eventType: isImmediatelyConfirmed ? "entry_confirmed_created" : "entry_provisional_created",
+        fromStatus: null,
+        toStatus: entryRow.status,
+        comment: `Created ${isImmediatelyConfirmed ? "confirmed" : "provisional"} ${catLabel} entry (${formatEur(amountCents)})${params.comment.trim() ? `: ${params.comment.trim()}` : ""}`,
+        metadataJson: {
+          amountCents,
+          category: params.category,
+          entryDate: toIsoDateInput(params.entryDate)
+        }
+      });
+
       await recordAuditLog(tx, {
         seasonId: activeSeason.id,
         actorId: actor.id,
@@ -221,6 +246,19 @@ export async function confirmProvisionalEntryWithInvoice(
         uploadedById: actor.id
       });
 
+      await tx.insert(entryTimeline).values({
+        entryId: entry.id,
+        actorId: actor.id,
+        eventType: "entry_confirmed",
+        fromStatus: entry.status,
+        toStatus: nextStatus,
+        comment: `Confirmed provisional entry with invoice (${savedInvoice.originalName}) at ${formatEur(finalAmount)}${(params.comment || "").trim() ? ` — ${(params.comment || "").trim()}` : ""}`,
+        metadataJson: {
+          confirmedAmountCents: finalAmount,
+          invoiceName: savedInvoice.originalName
+        }
+      });
+
       await recordAuditLog(tx, {
         seasonId: entry.seasonId,
         actorId: actor.id,
@@ -273,6 +311,15 @@ export async function cancelProvisionalEntry(
         updatedAt: new Date()
       })
       .where(eq(moneyEntries.id, entry.id));
+
+    await tx.insert(entryTimeline).values({
+      entryId: entry.id,
+      actorId: actor.id,
+      eventType: "entry_cancelled",
+      fromStatus: entry.status,
+      toStatus: nextStatus,
+      comment: cleanReason
+    });
 
     await recordAuditLog(tx, {
       seasonId: entry.seasonId,
@@ -384,6 +431,20 @@ export async function editProvisionalEntry(
           }))
         );
       }
+
+      await tx.insert(entryTimeline).values({
+        entryId: entry.id,
+        actorId: actor.id,
+        eventType: "entry_provisional_edited",
+        fromStatus: entry.status,
+        toStatus: entry.status,
+        comment: `Edited provisional entry "${params.title.trim()}" (${formatEur(amountCents)})`,
+        metadataJson: {
+          initialAmountCents: amountCents,
+          category: params.category,
+          entryDate: toIsoDateInput(params.entryDate)
+        }
+      });
 
       await recordAuditLog(tx, {
         seasonId: entry.seasonId,
@@ -667,6 +728,7 @@ export async function getSeasonBudgetSnapshot(params: {
           : entry.entryDate;
       return {
         id: entry.id,
+        seasonId: entry.seasonId,
         entryCode: entry.entryCode,
         title: entry.title,
         category: entry.category,
@@ -680,9 +742,12 @@ export async function getSeasonBudgetSnapshot(params: {
         entryDate: entry.entryDate,
         effectiveDate,
         comment: entry.comment,
+        createdById: entry.createdById,
         creatorName,
+        confirmedById: entry.confirmedById ?? null,
         confirmedByName: entry.confirmedById ? (userNameMap.get(entry.confirmedById) ?? null) : null,
         confirmedAt: entry.confirmedAt ? entry.confirmedAt.toISOString() : null,
+        createdAt: entry.createdAt.toISOString(),
         attachments: atts.map(a => ({
           id: a.id,
           kind: a.kind,
@@ -709,4 +774,449 @@ export async function getSeasonBudgetSnapshot(params: {
     provisionalSpendings: provisionalSpendingsList,
     entries: mappedEntries
   };
+}
+
+export interface EntryItemLogEvent {
+  id: string;
+  eventType: string;
+  fromStatus: string | null;
+  toStatus: string | null;
+  comment: string;
+  metadataJson: Record<string, unknown> | null;
+  createdAt: string;
+  actorName: string;
+  actorTitle: string;
+  actorRole: string;
+  actorAvatarId: string | null;
+}
+
+/**
+ * Returns chronological item log events for a money entry, merging native `entry_timeline`
+ * rows with historical `audit_logs` records created before `entry_timeline` existed.
+ */
+export async function getMoneyEntryItemLog(entryId: string): Promise<{
+  entry: { id: string; entryCode: string; title: string; status: EntryStatus };
+  events: EntryItemLogEvent[];
+} | null> {
+  await ensureDbReady();
+  const db = getDb();
+
+  const [entry] = await db
+    .select({
+      id: moneyEntries.id,
+      entryCode: moneyEntries.entryCode,
+      title: moneyEntries.title,
+      status: moneyEntries.status
+    })
+    .from(moneyEntries)
+    .where(eq(moneyEntries.id, entryId))
+    .limit(1);
+  if (!entry) return null;
+
+  const [timelineRows, auditRows] = await Promise.all([
+    db
+      .select({
+        id: entryTimeline.id,
+        eventType: entryTimeline.eventType,
+        fromStatus: entryTimeline.fromStatus,
+        toStatus: entryTimeline.toStatus,
+        comment: entryTimeline.comment,
+        metadataJson: entryTimeline.metadataJson,
+        createdAt: entryTimeline.createdAt,
+        actorName: users.fullName,
+        actorTitle: users.title,
+        actorRole: users.role,
+        actorAvatarId: users.avatarAttachmentId
+      })
+      .from(entryTimeline)
+      .innerJoin(users, eq(entryTimeline.actorId, users.id))
+      .where(eq(entryTimeline.entryId, entry.id))
+      .orderBy(asc(entryTimeline.createdAt)),
+    db
+      .select({
+        id: auditLogs.id,
+        action: auditLogs.action,
+        summary: auditLogs.summary,
+        detailsJson: auditLogs.detailsJson,
+        actorLabel: auditLogs.actorLabel,
+        createdAt: auditLogs.createdAt
+      })
+      .from(auditLogs)
+      .where(and(eq(auditLogs.targetType, "entry"), eq(auditLogs.targetId, entry.id)))
+      .orderBy(asc(auditLogs.createdAt))
+  ]);
+
+  const events: EntryItemLogEvent[] = timelineRows.map(r => ({
+    id: r.id,
+    eventType: r.eventType,
+    fromStatus: r.fromStatus,
+    toStatus: r.toStatus,
+    comment: r.comment,
+    metadataJson: r.metadataJson,
+    createdAt: r.createdAt.toISOString(),
+    actorName: r.actorName,
+    actorTitle: r.actorTitle,
+    actorRole: r.actorRole,
+    actorAvatarId: r.actorAvatarId ?? null
+  }));
+
+  const auditToTimelineEvent: Record<string, string> = {
+    master_entry_edited: "master_edited"
+  };
+
+  for (const log of auditRows) {
+    const mappedEvent = auditToTimelineEvent[log.action] ?? log.action;
+    const matched = timelineRows.some(
+      t =>
+        (t.eventType === log.action || t.eventType === mappedEvent) &&
+        Math.abs(t.createdAt.getTime() - log.createdAt.getTime()) <= 5000
+    );
+    if (!matched) {
+      events.push({
+        id: `audit-${log.id}`,
+        eventType: log.action,
+        fromStatus: null,
+        toStatus: null,
+        comment: log.summary,
+        metadataJson: log.detailsJson,
+        createdAt: log.createdAt.toISOString(),
+        actorName: log.actorLabel,
+        actorTitle: "Audit Record",
+        actorRole: "approver",
+        actorAvatarId: null
+      });
+    }
+  }
+
+  events.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+  return { entry, events };
+}
+
+export interface MasterUpdateEntryParams {
+  entryId: string;
+  entryCode: string;
+  seasonId: string;
+  title: string;
+  category: EntryCategory;
+  status: EntryStatus;
+  initialAmountEur: string;
+  confirmedAmountEur?: string | null;
+  entryDate: string;
+  comment: string;
+  createdById: string;
+  confirmedById?: string | null;
+  confirmedAt?: string | null;
+  createdAt: string;
+  attachmentUpdates: Array<{
+    id: string;
+    originalName: string;
+    kind: "supporting_doc" | "invoice";
+  }>;
+  removeAttachmentIds: string[];
+  newSupportingFiles: File[];
+  newInvoiceFiles: File[];
+  editReason?: string;
+}
+
+/** Master-only unrestricted full edit across every field, timestamp, and attachment of a money entry. */
+export async function masterUpdateMoneyEntry(
+  actor: PublicUser,
+  params: MasterUpdateEntryParams
+): Promise<{ entryCode: string; changedCount: number }> {
+  if (actor.role !== "master") {
+    throw new Error("FORBIDDEN: Master account privileges required.");
+  }
+  await ensureDbReady();
+
+  const initialAmountCents = parseEurToCents(params.initialAmountEur, { allowZero: true });
+  if (initialAmountCents === null) {
+    throw new Error("Initial amount must be a valid non-negative Euro amount.");
+  }
+
+  let confirmedAmountCents: number | null = null;
+  if (params.confirmedAmountEur && params.confirmedAmountEur.trim().length > 0) {
+    confirmedAmountCents = parseEurToCents(params.confirmedAmountEur, { allowZero: true });
+    if (confirmedAmountCents === null) {
+      throw new Error("Confirmed amount must be blank or a valid non-negative Euro amount.");
+    }
+  }
+
+  const createdAt = parseRequiredTimestamp(params.createdAt, "Created timestamp");
+  const confirmedAt = parseOptionalTimestamp(params.confirmedAt, "Confirmed timestamp");
+  const nextEntryDate = toIsoDateInput(params.entryDate);
+
+  const savedUploads = await saveUploadGroups([
+    { kind: "supporting_doc" as const, files: params.newSupportingFiles, mode: "document" },
+    { kind: "invoice" as const, files: params.newInvoiceFiles, mode: "document" }
+  ]);
+
+  try {
+    const db = getDb();
+    let removedKeys: string[] = [];
+
+    const result = await db.transaction(async tx => {
+      const [entry] = await tx
+        .select()
+        .from(moneyEntries)
+        .where(eq(moneyEntries.id, params.entryId))
+        .limit(1);
+      if (!entry) throw new Error("Money entry not found.");
+
+      const nextEntryCode = params.entryCode.trim().toUpperCase();
+      if (nextEntryCode !== entry.entryCode) {
+        const [dup] = await tx
+          .select({ id: moneyEntries.id })
+          .from(moneyEntries)
+          .where(and(eq(moneyEntries.entryCode, nextEntryCode), ne(moneyEntries.id, entry.id)))
+          .limit(1);
+        if (dup) {
+          throw new Error(`Entry ID "${nextEntryCode}" is already used by another money entry.`);
+        }
+      }
+
+      const seasonIds = Array.from(new Set([entry.seasonId, params.seasonId]));
+      const seasonRows = await tx
+        .select({ id: seasons.id, name: seasons.name, yearCode: seasons.yearCode })
+        .from(seasons)
+        .where(inArray(seasons.id, seasonIds));
+      const seasonMap = new Map(seasonRows.map(s => [s.id, `${s.name} (${s.yearCode})`]));
+      if (!seasonMap.has(params.seasonId)) {
+        throw new Error("Selected season does not exist.");
+      }
+
+      const nextConfirmedById = params.confirmedById?.trim() || null;
+      const userIdsNeeded = Array.from(
+        new Set(
+          [entry.createdById, params.createdById, entry.confirmedById, nextConfirmedById].filter(
+            (id): id is string => Boolean(id)
+          )
+        )
+      );
+      const userRows =
+        userIdsNeeded.length > 0
+          ? await tx
+              .select({ id: users.id, fullName: users.fullName })
+              .from(users)
+              .where(inArray(users.id, userIdsNeeded))
+          : [];
+      const userMap = new Map(userRows.map(u => [u.id, u.fullName]));
+      if (!userMap.has(params.createdById)) throw new Error("Selected creator user not found.");
+      if (nextConfirmedById && !userMap.has(nextConfirmedById)) {
+        throw new Error("Selected confirmed-by user not found.");
+      }
+
+      const attSync = await syncEntityAttachments(tx, {
+        entityType: "entry",
+        entityId: entry.id,
+        actorId: actor.id,
+        updates: params.attachmentUpdates,
+        removeIds: params.removeAttachmentIds,
+        savedUploads
+      });
+      removedKeys = attSync.removedKeys;
+
+      const nextTitle = params.title.trim();
+      const nextComment = params.comment.trim();
+      const fmtNullableEur = (cents: number | null) => (cents === null ? "None" : formatEur(cents));
+      const fmtNullableTs = (d: Date | null) => (d ? formatDateTime(d) : "None");
+      const fmtUser = (id: string | null) => (id ? (userMap.get(id) ?? id) : "None");
+
+      const changes = diffRecordFields([
+        { field: "entryCode", label: "Entry ID", before: entry.entryCode, after: nextEntryCode },
+        {
+          field: "seasonId",
+          label: "Season",
+          before: seasonMap.get(entry.seasonId) ?? entry.seasonId,
+          after: seasonMap.get(params.seasonId) ?? params.seasonId
+        },
+        { field: "title", label: "Title", before: entry.title, after: nextTitle },
+        {
+          field: "category",
+          label: "Category",
+          before: ENTRY_CATEGORY_MAP[entry.category]?.label ?? entry.category,
+          after: ENTRY_CATEGORY_MAP[params.category]?.label ?? params.category
+        },
+        {
+          field: "status",
+          label: "Status",
+          before: ENTRY_STATUS_LABELS[entry.status],
+          after: ENTRY_STATUS_LABELS[params.status]
+        },
+        {
+          field: "initialAmountCents",
+          label: "Initial / Expected Amount",
+          before: formatEur(entry.initialAmountCents),
+          after: formatEur(initialAmountCents)
+        },
+        {
+          field: "confirmedAmountCents",
+          label: "Confirmed Amount",
+          before: fmtNullableEur(entry.confirmedAmountCents),
+          after: fmtNullableEur(confirmedAmountCents)
+        },
+        { field: "entryDate", label: "Entry Date", before: entry.entryDate, after: nextEntryDate },
+        { field: "comment", label: "Comment", before: entry.comment, after: nextComment },
+        {
+          field: "createdById",
+          label: "Creator",
+          before: fmtUser(entry.createdById),
+          after: fmtUser(params.createdById)
+        },
+        {
+          field: "confirmedById",
+          label: "Confirmed By",
+          before: fmtUser(entry.confirmedById),
+          after: fmtUser(nextConfirmedById)
+        },
+        {
+          field: "confirmedAt",
+          label: "Confirmed At",
+          before: fmtNullableTs(entry.confirmedAt),
+          after: fmtNullableTs(confirmedAt)
+        },
+        {
+          field: "createdAt",
+          label: "Created At",
+          before: formatDateTime(entry.createdAt),
+          after: formatDateTime(createdAt)
+        }
+      ]);
+
+      const totalChanges = changes.length + attSync.changeNotes.length;
+      const cleanReason = params.editReason?.trim() || "";
+      if (totalChanges === 0 && !cleanReason) {
+        return { entryCode: entry.entryCode, changedCount: 0 };
+      }
+
+      const now = new Date();
+      await tx
+        .update(moneyEntries)
+        .set({
+          entryCode: nextEntryCode,
+          seasonId: params.seasonId,
+          title: nextTitle,
+          category: params.category,
+          status: params.status,
+          initialAmountCents,
+          confirmedAmountCents,
+          entryDate: nextEntryDate,
+          comment: nextComment,
+          createdById: params.createdById,
+          confirmedById: nextConfirmedById,
+          confirmedAt,
+          createdAt,
+          updatedAt: now
+        })
+        .where(eq(moneyEntries.id, entry.id));
+
+      const logText = formatDiffSummaryLines({
+        changes,
+        extraLines: attSync.changeNotes,
+        reason: cleanReason
+      });
+
+      await tx.insert(entryTimeline).values({
+        entryId: entry.id,
+        actorId: actor.id,
+        eventType: "master_edited",
+        fromStatus: entry.status,
+        toStatus: params.status,
+        comment: logText,
+        metadataJson: {
+          reason: cleanReason || null,
+          changes,
+          attachmentChanges: attSync.changeNotes
+        }
+      });
+
+      const changedLabels = [
+        ...changes.map(c => c.label),
+        ...(attSync.changeNotes.length > 0 ? ["Attachments"] : [])
+      ];
+
+      await recordAuditLog(tx, {
+        seasonId: params.seasonId,
+        actorId: actor.id,
+        actorLabel: `${actor.fullName} (Master)`,
+        action: "master_entry_edited",
+        targetType: "entry",
+        targetId: entry.id,
+        targetCode: nextEntryCode,
+        summary: `Master edited entry ${nextEntryCode} "${nextTitle}" (${changedLabels.join(", ") || "note added"})`,
+        details: {
+          previousEntryCode: entry.entryCode,
+          nextEntryCode,
+          reason: cleanReason || null,
+          changes,
+          attachmentChanges: attSync.changeNotes
+        }
+      });
+
+      return { entryCode: nextEntryCode, changedCount: Math.max(1, totalChanges) };
+    });
+
+    await Promise.all(removedKeys.map(k => deleteStoredFileQuietly(k)));
+    return result;
+  } catch (err) {
+    await Promise.all(savedUploads.map(u => deleteStoredFileQuietly(u.saved.storageKey)));
+    throw err;
+  }
+}
+
+/** Master-only permanent deletion of a money entry, its item log, and attachments. */
+export async function masterDeleteMoneyEntry(
+  actor: PublicUser,
+  entryId: string,
+  reason: string
+): Promise<{ entryCode: string; title: string }> {
+  if (actor.role !== "master") {
+    throw new Error("FORBIDDEN: Master account privileges required.");
+  }
+  await ensureDbReady();
+  const db = getDb();
+  const cleanReason = reason.trim();
+
+  let removedKeys: string[] = [];
+  const deletedInfo = await db.transaction(async tx => {
+    const [entry] = await tx
+      .select()
+      .from(moneyEntries)
+      .where(eq(moneyEntries.id, entryId))
+      .limit(1);
+    if (!entry) throw new Error("Money entry not found.");
+
+    const attResult = await purgeEntityAttachments(tx, "entry", entry.id);
+    removedKeys = attResult.removedKeys;
+
+    await tx.delete(moneyEntries).where(eq(moneyEntries.id, entry.id));
+
+    await recordAuditLog(tx, {
+      seasonId: entry.seasonId,
+      actorId: actor.id,
+      actorLabel: `${actor.fullName} (Master)`,
+      action: "master_entry_deleted",
+      targetType: "entry",
+      targetId: entry.id,
+      targetCode: entry.entryCode,
+      summary: `Master deleted entry ${entry.entryCode} "${entry.title}" (${ENTRY_STATUS_LABELS[entry.status]})${cleanReason ? ` — Reason: ${cleanReason}` : ""}`,
+      details: {
+        reason: cleanReason || null,
+        deletedAttachmentCount: attResult.count,
+        snapshot: {
+          entryCode: entry.entryCode,
+          category: entry.category,
+          title: entry.title,
+          status: entry.status,
+          initialAmountCents: entry.initialAmountCents,
+          confirmedAmountCents: entry.confirmedAmountCents,
+          entryDate: entry.entryDate
+        }
+      }
+    });
+
+    return { entryCode: entry.entryCode, title: entry.title };
+  });
+
+  await Promise.all(removedKeys.map(k => deleteStoredFileQuietly(k)));
+  return deletedInfo;
 }

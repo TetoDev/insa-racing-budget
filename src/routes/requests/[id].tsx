@@ -1,5 +1,13 @@
 import { Title } from "@solidjs/meta";
-import { A, createAsync, revalidate, useParams, useSubmission } from "@solidjs/router";
+import {
+  A,
+  createAsync,
+  revalidate,
+  useNavigate,
+  useParams,
+  useSearchParams,
+  useSubmission
+} from "@solidjs/router";
 import {
   ArrowLeft,
   CheckCircle2,
@@ -12,6 +20,7 @@ import {
   Package,
   Plus,
   Receipt,
+  ShieldAlert,
   Trash2,
   Upload,
   XCircle
@@ -26,18 +35,26 @@ import {
 } from "~/components/Badges";
 import { CarSystemField } from "~/components/CarSystemField";
 import { DepartmentBudgetWarning } from "~/components/DepartmentBudgetWarning";
+import {
+  MasterDeleteConfirmModal,
+  MasterEditRequestModal,
+  type MasterDeleteTarget
+} from "~/components/MasterModals";
+import { REQUEST_STATUS_LABELS } from "~/lib/constants";
 import { formatBytes, formatCentsPlain, formatDateTime, formatEur } from "~/lib/format";
 import {
   canCommentOnRequests,
   canEditOrWithdrawUnreviewedRequest,
   canRespondToCounterProposition,
   canReviewRequest,
-  canSelectOptionOrManageOrder
+  canSelectOptionOrManageOrder,
+  isMaster
 } from "~/lib/permissions";
 import {
   cancelOrderAction,
   counterResponseAction,
   postCommentAction,
+  queryMasterUsers,
   queryRequestDetail,
   reviewRequestAction,
   stageTwoSelectionAction,
@@ -46,10 +63,17 @@ import {
 
 export default function RequestDetailPage() {
   const params = useParams();
+  const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const app = useApp();
   const detail = createAsync(() => queryRequestDetail(params.id ?? ""));
+  const masterUsers = createAsync(() =>
+    isMaster(app.user()?.role) ? queryMasterUsers() : Promise.resolve([])
+  );
 
   const [lightboxId, setLightboxId] = createSignal<string | null>(null);
+  const [masterEditOpen, setMasterEditOpen] = createSignal(false);
+  const [deleteTarget, setDeleteTarget] = createSignal<MasterDeleteTarget | null>(null);
 
   // Stage 1 Review state
   const [reviewComment, setReviewComment] = createSignal("");
@@ -142,6 +166,13 @@ export default function RequestDetailPage() {
   const refreshAll = async () => {
     await revalidate(["request-detail", "requests-list", "budget-snapshot", "audit-logs"]);
   };
+
+  createEffect(() => {
+    if (searchParams.masterEdit === "1" && detail() && isMaster(app.user()?.role)) {
+      setMasterEditOpen(true);
+      setSearchParams({ masterEdit: undefined }, { replace: true });
+    }
+  });
 
   async function submitFeesUpdate(e: SubmitEvent) {
     e.preventDefault();
@@ -406,8 +437,8 @@ export default function RequestDetailPage() {
                     </div>
                   </div>
 
-                  <Show when={canEditWithdraw()}>
-                    <div class="flex items-center gap-2 shrink-0">
+                  <div class="flex flex-wrap items-center gap-2 shrink-0">
+                    <Show when={canEditWithdraw()}>
                       <button
                         type="button"
                         onClick={openEditModal}
@@ -416,8 +447,35 @@ export default function RequestDetailPage() {
                         <Edit3 class="h-3.5 w-3.5" />
                         Edit Request
                       </button>
-                    </div>
-                  </Show>
+                    </Show>
+                    <Show when={isMaster(app.user()?.role)}>
+                      <button
+                        type="button"
+                        onClick={() => setMasterEditOpen(true)}
+                        class="inline-flex items-center gap-1.5 rounded-lg border border-slate-900 bg-slate-900 px-3 py-2 text-xs font-semibold text-white hover:bg-slate-800 cursor-pointer"
+                      >
+                        <ShieldAlert class="h-3.5 w-3.5" />
+                        Master Edit (All Fields)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setDeleteTarget({
+                            kind: "request",
+                            id: d().id,
+                            code: d().requestCode,
+                            title: d().title,
+                            statusLabel: REQUEST_STATUS_LABELS[d().status],
+                            attachmentCount: d().attachments.length
+                          })
+                        }
+                        class="inline-flex items-center gap-1.5 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700 hover:bg-rose-100 cursor-pointer"
+                      >
+                        <Trash2 class="h-3.5 w-3.5" />
+                        Delete
+                      </button>
+                    </Show>
+                  </div>
                 </div>
 
                 <div class="rounded-xl bg-slate-50 border border-slate-100 p-4">
@@ -1046,7 +1104,13 @@ export default function RequestDetailPage() {
                             <span class="font-bold text-slate-900">{entry.actorName}</span>
                             <span class="text-slate-400">{entry.actorTitle}</span>
                             <RoleBadge role={entry.actorRole} />
-                            <span class="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-[10px] font-semibold text-slate-600">
+                            <span
+                              class={`rounded px-1.5 py-0.5 font-mono text-[10px] font-semibold ${
+                                entry.eventType === "master_edited"
+                                  ? "bg-red-50 text-red-700 border border-red-200"
+                                  : "bg-slate-100 text-slate-600"
+                              }`}
+                            >
                               {entry.eventType}
                             </span>
                             <span class="text-slate-400 ml-auto">
@@ -1363,6 +1427,29 @@ export default function RequestDetailPage() {
                   </form>
                 </div>
               </Show>
+
+              <MasterEditRequestModal
+                open={masterEditOpen()}
+                request={d()}
+                seasons={app.seasons()}
+                users={masterUsers() ?? []}
+                onClose={() => setMasterEditOpen(false)}
+                onSuccess={async nextCode => {
+                  await refreshAll();
+                  if (nextCode && params.id && nextCode !== d().requestCode && params.id !== d().id) {
+                    navigate(`/requests/${nextCode}`, { replace: true });
+                  }
+                }}
+              />
+
+              <MasterDeleteConfirmModal
+                target={deleteTarget()}
+                onClose={() => setDeleteTarget(null)}
+                onDeleted={async () => {
+                  await revalidate(["requests-list", "budget-snapshot", "audit-logs"]);
+                  navigate("/requests", { replace: true });
+                }}
+              />
             </div>
           );
         }}

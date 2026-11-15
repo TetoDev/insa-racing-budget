@@ -9,8 +9,11 @@ import {
   Download,
   Edit3,
   FileText,
+  History,
   PlusCircle,
-  SlidersHorizontal
+  ShieldAlert,
+  SlidersHorizontal,
+  Trash2
 } from "lucide-solid";
 import { For, Match, Show, Switch, createMemo, createSignal } from "solid-js";
 import { useApp } from "~/components/AppContext";
@@ -33,6 +36,13 @@ import {
   type ConfirmEntryTarget,
   type EditEntryTarget
 } from "~/components/BudgetModals";
+import {
+  EntryItemLogModal,
+  MasterDeleteConfirmModal,
+  MasterEditEntryModal,
+  type MasterDeleteTarget,
+  type MasterEntryEditTarget
+} from "~/components/MasterModals";
 import { SearchInputBar } from "~/components/SearchInputBar";
 import {
   filterBudgetItemsByQuery,
@@ -45,6 +55,7 @@ import {
   BUDGET_SECTIONS,
   DEPARTMENTS,
   ENTRY_CATEGORIES,
+  ENTRY_STATUS_LABELS,
   RATE_PERIODS,
   type BudgetSectionId,
   type DepartmentId,
@@ -53,8 +64,8 @@ import {
   type RatePeriod
 } from "~/lib/constants";
 import { formatDate, formatEur, toIsoDateInput } from "~/lib/format";
-import { canExportBudget, canManageBudgetEntries } from "~/lib/permissions";
-import { cancelEntryAction, queryBudgetSnapshot } from "~/server/rpc";
+import { canExportBudget, canManageBudgetEntries, isMaster } from "~/lib/permissions";
+import { cancelEntryAction, queryBudgetSnapshot, queryMasterUsers } from "~/server/rpc";
 
 type SortMode = "date_desc" | "amount_desc" | "amount_asc" | "code_asc";
 
@@ -114,6 +125,19 @@ export default function BudgetPage() {
   const [budgetsModalOpen, setBudgetsModalOpen] = createSignal(false);
   const [confirmTarget, setConfirmTarget] = createSignal<ConfirmEntryTarget | null>(null);
   const [editTarget, setEditTarget] = createSignal<EditEntryTarget | null>(null);
+  const [masterEditEntryTarget, setMasterEditEntryTarget] = createSignal<MasterEntryEditTarget | null>(
+    null
+  );
+  const [itemLogEntryTarget, setItemLogEntryTarget] = createSignal<{
+    id: string;
+    entryCode: string;
+    title: string;
+  } | null>(null);
+  const [deleteTarget, setDeleteTarget] = createSignal<MasterDeleteTarget | null>(null);
+
+  const masterUsers = createAsync(() =>
+    isMaster(app.user()?.role) ? queryMasterUsers() : Promise.resolve([])
+  );
 
   const cancelEntrySub = useSubmission(cancelEntryAction);
 
@@ -129,7 +153,7 @@ export default function BudgetPage() {
   });
 
   const refreshBudget = async () => {
-    await revalidate(["budget-snapshot", "audit-logs", "request-detail"]);
+    await revalidate(["budget-snapshot", "audit-logs", "request-detail", "entry-item-log", "requests-list"]);
   };
 
   const canWriteBudget = () =>
@@ -892,6 +916,9 @@ export default function BudgetPage() {
                         <th class="px-4 py-3 text-right">Final EUR</th>
                         <th class="px-4 py-3">Invoice Date</th>
                         <th class="px-4 py-3">Invoice</th>
+                        <Show when={isMaster(app.user()?.role)}>
+                          <th class="px-4 py-3 text-right">Master</th>
+                        </Show>
                       </tr>
                     </thead>
                     <tbody class="divide-y divide-slate-100">
@@ -899,7 +926,10 @@ export default function BudgetPage() {
                         when={filteredSpendings().length > 0}
                         fallback={
                           <tr>
-                            <td colSpan={7} class="px-4 py-8 text-center text-sm text-slate-500">
+                            <td
+                              colSpan={isMaster(app.user()?.role) ? 8 : 7}
+                              class="px-4 py-8 text-center text-sm text-slate-500"
+                            >
                               <Show
                                 when={spendingSearch().trim().length > 0 || deptFilter() !== "all"}
                                 fallback="No final spendings recorded in this period."
@@ -983,6 +1013,36 @@ export default function BudgetPage() {
                                     )}
                                   </Show>
                                 </td>
+                                <Show when={isMaster(app.user()?.role)}>
+                                  <td class="px-4 py-3 text-right whitespace-nowrap">
+                                    <div class="inline-flex items-center gap-1.5">
+                                      <A
+                                        href={`/requests/${sp.requestCode}?masterEdit=1`}
+                                        class="inline-flex items-center gap-1 rounded-md border border-slate-300 bg-white px-2 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-50"
+                                      >
+                                        <ShieldAlert class="h-3 w-3" />
+                                        Edit
+                                      </A>
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          setDeleteTarget({
+                                            kind: "request",
+                                            id: sp.id,
+                                            code: sp.requestCode,
+                                            title: sp.title,
+                                            statusLabel: "Spending (Final)",
+                                            attachmentCount: sp.attachments.length
+                                          })
+                                        }
+                                        class="inline-flex items-center gap-1 rounded-md border border-rose-200 bg-rose-50 px-2 py-1 text-[11px] font-semibold text-rose-700 hover:bg-rose-100 cursor-pointer"
+                                      >
+                                        <Trash2 class="h-3 w-3" />
+                                        Delete
+                                      </button>
+                                    </div>
+                                  </td>
+                                </Show>
                               </tr>
                             );
                           }}
@@ -1143,12 +1203,40 @@ export default function BudgetPage() {
                                   {formatEur(ord.provisionalTotalCents)}
                                 </td>
                                 <td class="px-4 py-3">
-                                  <A
-                                    href={`/requests/${ord.requestCode}`}
-                                    class="text-xs font-semibold text-red-600 hover:underline"
-                                  >
-                                    Open Order
-                                  </A>
+                                  <div class="flex flex-wrap items-center gap-2">
+                                    <A
+                                      href={`/requests/${ord.requestCode}`}
+                                      class="text-xs font-semibold text-red-600 hover:underline"
+                                    >
+                                      Open Order
+                                    </A>
+                                    <Show when={isMaster(app.user()?.role)}>
+                                      <A
+                                        href={`/requests/${ord.requestCode}?masterEdit=1`}
+                                        class="inline-flex items-center gap-1 rounded border border-slate-300 bg-white px-2 py-0.5 text-[11px] font-semibold text-slate-700 hover:bg-slate-50"
+                                      >
+                                        <ShieldAlert class="h-3 w-3" />
+                                        Edit
+                                      </A>
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          setDeleteTarget({
+                                            kind: "request",
+                                            id: ord.id,
+                                            code: ord.requestCode,
+                                            title: ord.title,
+                                            statusLabel: "Order (Provisional)",
+                                            attachmentCount: ord.attachments.length
+                                          })
+                                        }
+                                        class="inline-flex items-center gap-1 rounded border border-rose-200 bg-rose-50 px-2 py-0.5 text-[11px] font-semibold text-rose-700 hover:bg-rose-100 cursor-pointer"
+                                      >
+                                        <Trash2 class="h-3 w-3" />
+                                        Delete
+                                      </button>
+                                    </Show>
+                                  </div>
                                 </td>
                               </tr>
                             );
@@ -1240,6 +1328,20 @@ export default function BudgetPage() {
                             <span class="text-lg font-extrabold tabular-nums text-amber-700 mr-1">
                               {formatEur(entry.initialAmountCents)}
                             </span>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setItemLogEntryTarget({
+                                  id: entry.id,
+                                  entryCode: entry.entryCode,
+                                  title: entry.title
+                                })
+                              }
+                              class="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50 cursor-pointer"
+                            >
+                              <History class="h-3.5 w-3.5" />
+                              Log
+                            </button>
                             <Show when={canWriteBudget()}>
                               <button
                                 type="button"
@@ -1272,6 +1374,33 @@ export default function BudgetPage() {
                                   Cancel
                                 </button>
                               </form>
+                            </Show>
+                            <Show when={isMaster(app.user()?.role)}>
+                              <button
+                                type="button"
+                                onClick={() => setMasterEditEntryTarget(entry)}
+                                class="inline-flex items-center gap-1 rounded-lg bg-slate-900 px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-slate-800 cursor-pointer"
+                              >
+                                <ShieldAlert class="h-3.5 w-3.5" />
+                                Master Edit
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setDeleteTarget({
+                                    kind: "entry",
+                                    id: entry.id,
+                                    code: entry.entryCode,
+                                    title: entry.title,
+                                    statusLabel: ENTRY_STATUS_LABELS[entry.status],
+                                    attachmentCount: entry.attachments.length
+                                  })
+                                }
+                                class="inline-flex items-center gap-1 rounded-lg border border-rose-200 bg-rose-50 px-2.5 py-1.5 text-xs font-semibold text-rose-700 hover:bg-rose-100 cursor-pointer"
+                              >
+                                <Trash2 class="h-3.5 w-3.5" />
+                                Delete
+                              </button>
                             </Show>
                           </div>
                         </div>
@@ -1390,16 +1519,59 @@ export default function BudgetPage() {
                             {formatEur(entry.effectiveAmountCents)}
                           </div>
                           <div class="text-[11px] text-slate-400">By {entry.creatorName}</div>
-                          <Show when={entry.status === "provisional" && canWriteBudget()}>
+                          <div class="flex flex-wrap justify-end gap-1.5">
                             <button
                               type="button"
-                              onClick={() => setEditTarget(entry)}
-                              class="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer"
+                              onClick={() =>
+                                setItemLogEntryTarget({
+                                  id: entry.id,
+                                  entryCode: entry.entryCode,
+                                  title: entry.title
+                                })
+                              }
+                              class="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-50 cursor-pointer"
                             >
-                              <Edit3 class="h-3 w-3" />
-                              Edit Entry
+                              <History class="h-3 w-3" />
+                              Item Log
                             </button>
-                          </Show>
+                            <Show when={entry.status === "provisional" && canWriteBudget()}>
+                              <button
+                                type="button"
+                                onClick={() => setEditTarget(entry)}
+                                class="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer"
+                              >
+                                <Edit3 class="h-3 w-3" />
+                                Edit Entry
+                              </button>
+                            </Show>
+                            <Show when={isMaster(app.user()?.role)}>
+                              <button
+                                type="button"
+                                onClick={() => setMasterEditEntryTarget(entry)}
+                                class="inline-flex items-center gap-1 rounded-lg bg-slate-900 px-2.5 py-1 text-xs font-semibold text-white hover:bg-slate-800 cursor-pointer"
+                              >
+                                <ShieldAlert class="h-3 w-3" />
+                                Master Edit
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setDeleteTarget({
+                                    kind: "entry",
+                                    id: entry.id,
+                                    code: entry.entryCode,
+                                    title: entry.title,
+                                    statusLabel: ENTRY_STATUS_LABELS[entry.status],
+                                    attachmentCount: entry.attachments.length
+                                  })
+                                }
+                                class="inline-flex items-center gap-1 rounded-lg border border-rose-200 bg-rose-50 px-2.5 py-1 text-xs font-semibold text-rose-700 hover:bg-rose-100 cursor-pointer"
+                              >
+                                <Trash2 class="h-3 w-3" />
+                                Delete
+                              </button>
+                            </Show>
+                          </div>
                         </div>
                       </div>
                     )}
@@ -1606,6 +1778,25 @@ export default function BudgetPage() {
         target={editTarget()}
         onClose={() => setEditTarget(null)}
         onSuccess={refreshBudget}
+      />
+
+      <MasterEditEntryModal
+        target={masterEditEntryTarget()}
+        seasons={app.seasons()}
+        users={masterUsers() ?? []}
+        onClose={() => setMasterEditEntryTarget(null)}
+        onSuccess={refreshBudget}
+      />
+
+      <EntryItemLogModal
+        entry={itemLogEntryTarget()}
+        onClose={() => setItemLogEntryTarget(null)}
+      />
+
+      <MasterDeleteConfirmModal
+        target={deleteTarget()}
+        onClose={() => setDeleteTarget(null)}
+        onDeleted={refreshBudget}
       />
 
       <Show when={snapshot()}>

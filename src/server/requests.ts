@@ -1,16 +1,23 @@
-import { and, asc, desc, eq, ilike, inArray, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, ilike, inArray, ne, or, sql } from "drizzle-orm";
 import {
   DEPARTMENT_MAP,
   REQUEST_STATUS_LABELS,
   type DepartmentId,
   type RequestStatus
 } from "~/lib/constants";
-import { formatEur, parseEurToCents } from "~/lib/format";
+import { formatDateTime, formatEur, parseEurToCents } from "~/lib/format";
+import {
+  diffRecordFields,
+  formatDiffSummaryLines,
+  parseOptionalTimestamp,
+  parseRequiredTimestamp
+} from "~/lib/master-diff";
 import {
   canEditOrWithdrawUnreviewedRequest,
   canRespondToCounterProposition
 } from "~/lib/permissions";
 import { computeOrderTotalCents, resolveRequestTransition } from "~/lib/workflow";
+import { purgeEntityAttachments, saveUploadGroups, syncEntityAttachments } from "./attachment-sync";
 import { recordAuditLog } from "./audit";
 import type { PublicUser } from "./auth";
 import { getDb } from "./db";
@@ -461,7 +468,9 @@ export async function getPurchaseRequestDetail(idOrCode: string) {
     version: reqRow.version,
     createdAt: reqRow.createdAt.toISOString(),
     updatedAt: reqRow.updatedAt.toISOString(),
+    orderedById: reqRow.orderedById ?? null,
     orderedAt: reqRow.orderedAt ? reqRow.orderedAt.toISOString() : null,
+    invoicedById: reqRow.invoicedById ?? null,
     invoicedAt: reqRow.invoicedAt ? reqRow.invoicedAt.toISOString() : null,
     archivedAt: reqRow.archivedAt ? reqRow.archivedAt.toISOString() : null,
     creator: creator
@@ -1301,4 +1310,595 @@ export async function finalizeOrderWithInvoice(
     await deleteStoredFileQuietly(savedInvoice.storageKey);
     throw err;
   }
+}
+
+export interface MasterOptionPayload {
+  id?: string | null;
+  clientKey: string;
+  label: string;
+  productUrl?: string | null;
+  priceEur: string;
+  drawbacks: string;
+  notes?: string | null;
+}
+
+export interface MasterUpdateRequestParams {
+  requestId: string;
+  requestCode: string;
+  seasonId: string;
+  department: DepartmentId;
+  carSystem: string;
+  title: string;
+  explanation: string;
+  status: RequestStatus;
+  creatorId: string;
+  hasApproverResponse: boolean;
+  selectedOptionClientKey?: string | null;
+  selectedOptionPriceEur?: string | null;
+  shippingEur: string;
+  importFeeEur: string;
+  finalAmountEur?: string | null;
+  orderedById?: string | null;
+  orderedAt?: string | null;
+  invoicedById?: string | null;
+  invoicedAt?: string | null;
+  archivedAt?: string | null;
+  createdAt: string;
+  options: MasterOptionPayload[];
+  attachmentUpdates: Array<{
+    id: string;
+    originalName: string;
+    kind: "photo" | "document" | "invoice" | "fee_proof";
+  }>;
+  removeAttachmentIds: string[];
+  newPhotoFiles: File[];
+  newDocumentFiles: File[];
+  newFeeProofFiles: File[];
+  newInvoiceFiles: File[];
+  editReason?: string;
+}
+
+function parseNullableEurField(
+  raw: string | null | undefined,
+  fieldLabel: string
+): number | null {
+  if (!raw || !raw.trim()) return null;
+  const cents = parseEurToCents(raw, { allowZero: true });
+  if (cents === null) {
+    throw new Error(`${fieldLabel} must be blank or a valid non-negative Euro amount.`);
+  }
+  return cents;
+}
+
+async function syncRequestBuyingOptions(
+  tx: Pick<ReturnType<typeof getDb>, "select" | "insert" | "update" | "delete">,
+  params: {
+    requestId: string;
+    incoming: Array<{
+      id?: string | null;
+      clientKey: string;
+      sortOrder: number;
+      label: string;
+      productUrl: string | null;
+      priceCents: number;
+      drawbacks: string;
+      notes: string | null;
+    }>;
+    selectedClientKey?: string | null;
+  }
+): Promise<{
+  selectedOptionId: string | null;
+  selectedOptionLabel: string | null;
+  prevSelectedOptionLabel: string | null;
+  changeNotes: string[];
+  prevSelectedOptionIdWasSet: string | null;
+}> {
+  const existingRows = await tx
+    .select()
+    .from(buyingOptions)
+    .where(eq(buyingOptions.requestId, params.requestId))
+    .orderBy(asc(buyingOptions.sortOrder));
+
+  const existingById = new Map(existingRows.map(r => [r.id, r]));
+  const keptExistingIds = new Set<string>();
+  const clientKeyToDbId = new Map<string, string>();
+  const dbIdToLabel = new Map<string, string>();
+  const changeNotes: string[] = [];
+
+  for (const opt of params.incoming) {
+    const existing = opt.id ? existingById.get(opt.id) : undefined;
+    if (existing) {
+      keptExistingIds.add(existing.id);
+      clientKeyToDbId.set(opt.clientKey, existing.id);
+      dbIdToLabel.set(existing.id, opt.label);
+
+      const diffs: string[] = [];
+      if (existing.sortOrder !== opt.sortOrder) diffs.push(`order ${existing.sortOrder + 1} → ${opt.sortOrder + 1}`);
+      if (existing.label !== opt.label) diffs.push(`label "${existing.label}" → "${opt.label}"`);
+      if (existing.priceCents !== opt.priceCents) {
+        diffs.push(`price ${formatEur(existing.priceCents)} → ${formatEur(opt.priceCents)}`);
+      }
+      if ((existing.productUrl ?? null) !== opt.productUrl) {
+        diffs.push(`URL "${existing.productUrl ?? "—"}" → "${opt.productUrl ?? "—"}"`);
+      }
+      if (existing.drawbacks !== opt.drawbacks) {
+        diffs.push(`drawbacks updated`);
+      }
+      if ((existing.notes ?? null) !== opt.notes) {
+        diffs.push(`notes "${existing.notes ?? "—"}" → "${opt.notes ?? "—"}"`);
+      }
+
+      if (diffs.length > 0) {
+        await tx
+          .update(buyingOptions)
+          .set({
+            sortOrder: opt.sortOrder,
+            label: opt.label,
+            productUrl: opt.productUrl,
+            priceCents: opt.priceCents,
+            drawbacks: opt.drawbacks,
+            notes: opt.notes
+          })
+          .where(eq(buyingOptions.id, existing.id));
+        changeNotes.push(`Updated Option #${opt.sortOrder + 1} "${opt.label}": ${diffs.join(", ")}`);
+      }
+    } else {
+      const [inserted] = await tx
+        .insert(buyingOptions)
+        .values({
+          requestId: params.requestId,
+          sortOrder: opt.sortOrder,
+          label: opt.label,
+          productUrl: opt.productUrl,
+          priceCents: opt.priceCents,
+          drawbacks: opt.drawbacks,
+          notes: opt.notes
+        })
+        .returning({ id: buyingOptions.id });
+      clientKeyToDbId.set(opt.clientKey, inserted.id);
+      dbIdToLabel.set(inserted.id, opt.label);
+      changeNotes.push(`Added Option #${opt.sortOrder + 1} "${opt.label}" (${formatEur(opt.priceCents)})`);
+    }
+  }
+
+  const removedIds: string[] = [];
+  for (const prev of existingRows) {
+    if (!keptExistingIds.has(prev.id)) {
+      removedIds.push(prev.id);
+      changeNotes.push(`Removed Option "${prev.label}" (${formatEur(prev.priceCents)})`);
+    }
+  }
+  if (removedIds.length > 0) {
+    await tx.delete(buyingOptions).where(inArray(buyingOptions.id, removedIds));
+  }
+
+  let selectedOptionId: string | null = null;
+  let selectedOptionLabel: string | null = null;
+  const cleanKey = params.selectedClientKey?.trim() || "";
+  if (cleanKey) {
+    const resolvedId = clientKeyToDbId.get(cleanKey);
+    if (!resolvedId) {
+      throw new Error("Selected buying option does not match any remaining option on this request.");
+    }
+    selectedOptionId = resolvedId;
+    selectedOptionLabel = dbIdToLabel.get(resolvedId) ?? resolvedId;
+  }
+
+  return {
+    selectedOptionId,
+    selectedOptionLabel,
+    prevSelectedOptionLabel: null,
+    changeNotes,
+    prevSelectedOptionIdWasSet: existingRows.map(r => `${r.id}:${r.label}`).join("|")
+  };
+}
+
+/** Master-only full edit across every field, buying option, timestamp, and attachment of a purchase request. */
+export async function masterUpdatePurchaseRequest(
+  actor: PublicUser,
+  params: MasterUpdateRequestParams
+): Promise<{ requestCode: string; changedCount: number }> {
+  if (actor.role !== "master") {
+    throw new Error("FORBIDDEN: Master account privileges required.");
+  }
+  await ensureDbReady();
+
+  const shippingCents = parseEurToCents(params.shippingEur, { allowZero: true });
+  if (shippingCents === null) throw new Error("Shipping fee must be a non-negative Euro amount.");
+
+  const importFeeCents = parseEurToCents(params.importFeeEur, { allowZero: true });
+  if (importFeeCents === null) throw new Error("Import fee must be a non-negative Euro amount.");
+
+  const selectedOptionPriceCents = parseNullableEurField(
+    params.selectedOptionPriceEur,
+    "Selected option base price"
+  );
+  const finalAmountCents = parseNullableEurField(params.finalAmountEur, "Final invoiced amount");
+
+  const parsedOptions = params.options.map((opt, idx) => {
+    const priceCents = parseEurToCents(opt.priceEur, { allowZero: true });
+    if (priceCents === null) {
+      throw new Error(`Option #${idx + 1} (${opt.label || "untitled"}) has an invalid EUR price.`);
+    }
+    return {
+      id: opt.id || null,
+      clientKey: opt.clientKey,
+      sortOrder: idx,
+      label: opt.label.trim(),
+      productUrl: opt.productUrl?.trim() || null,
+      priceCents,
+      drawbacks: opt.drawbacks.trim(),
+      notes: opt.notes?.trim() || null
+    };
+  });
+
+  const createdAt = parseRequiredTimestamp(params.createdAt, "Created timestamp");
+  const orderedAt = parseOptionalTimestamp(params.orderedAt, "Ordered timestamp");
+  const invoicedAt = parseOptionalTimestamp(params.invoicedAt, "Invoiced timestamp");
+  const archivedAt = parseOptionalTimestamp(params.archivedAt, "Archived timestamp");
+
+  const savedUploads = await saveUploadGroups([
+    { kind: "photo" as const, files: params.newPhotoFiles, mode: "image_only" },
+    { kind: "document" as const, files: params.newDocumentFiles, mode: "document" },
+    { kind: "fee_proof" as const, files: params.newFeeProofFiles, mode: "document" },
+    { kind: "invoice" as const, files: params.newInvoiceFiles, mode: "document" }
+  ]);
+
+  try {
+    const db = getDb();
+    let removedKeys: string[] = [];
+
+    const result = await db.transaction(async tx => {
+      const [reqRow] = await tx
+        .select()
+        .from(purchaseRequests)
+        .where(eq(purchaseRequests.id, params.requestId))
+        .limit(1);
+      if (!reqRow) throw new Error("Purchase request not found.");
+
+      const nextRequestCode = params.requestCode.trim().toUpperCase();
+      if (nextRequestCode !== reqRow.requestCode) {
+        const [dup] = await tx
+          .select({ id: purchaseRequests.id })
+          .from(purchaseRequests)
+          .where(
+            and(
+              eq(purchaseRequests.requestCode, nextRequestCode),
+              ne(purchaseRequests.id, reqRow.id)
+            )
+          )
+          .limit(1);
+        if (dup) {
+          throw new Error(`Request ID "${nextRequestCode}" is already used by another request.`);
+        }
+      }
+
+      const seasonIdsToCheck = Array.from(new Set([reqRow.seasonId, params.seasonId]));
+      const seasonRows = await tx
+        .select({ id: seasons.id, name: seasons.name, yearCode: seasons.yearCode })
+        .from(seasons)
+        .where(inArray(seasons.id, seasonIdsToCheck));
+      const seasonMap = new Map(seasonRows.map(s => [s.id, `${s.name} (${s.yearCode})`]));
+      if (!seasonMap.has(params.seasonId)) {
+        throw new Error("Selected season does not exist.");
+      }
+
+      const nextOrderedById = params.orderedById?.trim() || null;
+      const nextInvoicedById = params.invoicedById?.trim() || null;
+      const userIdsNeeded = Array.from(
+        new Set(
+          [
+            reqRow.creatorId,
+            params.creatorId,
+            reqRow.orderedById,
+            nextOrderedById,
+            reqRow.invoicedById,
+            nextInvoicedById
+          ].filter((id): id is string => Boolean(id))
+        )
+      );
+      const userRows =
+        userIdsNeeded.length > 0
+          ? await tx
+              .select({ id: users.id, fullName: users.fullName })
+              .from(users)
+              .where(inArray(users.id, userIdsNeeded))
+          : [];
+      const userMap = new Map(userRows.map(u => [u.id, u.fullName]));
+      if (!userMap.has(params.creatorId)) throw new Error("Selected creator user not found.");
+      if (nextOrderedById && !userMap.has(nextOrderedById)) {
+        throw new Error("Selected ordered-by user not found.");
+      }
+      if (nextInvoicedById && !userMap.has(nextInvoicedById)) {
+        throw new Error("Selected invoiced-by user not found.");
+      }
+
+      const prevSelectedOptRow = reqRow.selectedOptionId
+        ? await tx
+            .select({ label: buyingOptions.label })
+            .from(buyingOptions)
+            .where(eq(buyingOptions.id, reqRow.selectedOptionId))
+            .limit(1)
+        : [];
+      const prevSelectedOptLabel =
+        prevSelectedOptRow[0]?.label ?? (reqRow.selectedOptionId ? reqRow.selectedOptionId : "None");
+
+      const optionSync = await syncRequestBuyingOptions(tx, {
+        requestId: reqRow.id,
+        incoming: parsedOptions,
+        selectedClientKey: params.selectedOptionClientKey
+      });
+
+      const attSync = await syncEntityAttachments(tx, {
+        entityType: "request",
+        entityId: reqRow.id,
+        actorId: actor.id,
+        updates: params.attachmentUpdates,
+        removeIds: params.removeAttachmentIds,
+        savedUploads
+      });
+      removedKeys = attSync.removedKeys;
+
+      const nextTitle = params.title.trim();
+      const nextCarSystem = params.carSystem.trim();
+      const nextExplanation = params.explanation.trim();
+
+      const fmtNullableEur = (cents: number | null) => (cents === null ? "None" : formatEur(cents));
+      const fmtNullableTs = (d: Date | null) => (d ? formatDateTime(d) : "None");
+      const fmtUser = (id: string | null) => (id ? (userMap.get(id) ?? id) : "None");
+
+      const changes = diffRecordFields([
+        { field: "requestCode", label: "Request ID", before: reqRow.requestCode, after: nextRequestCode },
+        {
+          field: "seasonId",
+          label: "Season",
+          before: seasonMap.get(reqRow.seasonId) ?? reqRow.seasonId,
+          after: seasonMap.get(params.seasonId) ?? params.seasonId
+        },
+        {
+          field: "department",
+          label: "Department",
+          before: DEPARTMENT_MAP[reqRow.department]?.label ?? reqRow.department,
+          after: DEPARTMENT_MAP[params.department]?.label ?? params.department
+        },
+        { field: "carSystem", label: "Car System", before: reqRow.carSystem || "—", after: nextCarSystem || "—" },
+        { field: "title", label: "Title", before: reqRow.title, after: nextTitle },
+        { field: "explanation", label: "Explanation", before: reqRow.explanation, after: nextExplanation },
+        {
+          field: "status",
+          label: "Status",
+          before: REQUEST_STATUS_LABELS[reqRow.status],
+          after: REQUEST_STATUS_LABELS[params.status]
+        },
+        {
+          field: "creatorId",
+          label: "Creator",
+          before: fmtUser(reqRow.creatorId),
+          after: fmtUser(params.creatorId)
+        },
+        {
+          field: "hasApproverResponse",
+          label: "Approver Responded",
+          before: reqRow.hasApproverResponse ? "Yes" : "No",
+          after: params.hasApproverResponse ? "Yes" : "No"
+        },
+        {
+          field: "selectedOptionId",
+          label: "Selected Option",
+          before: prevSelectedOptLabel,
+          after: optionSync.selectedOptionLabel ?? "None"
+        },
+        {
+          field: "selectedOptionPriceCents",
+          label: "Selected Base Price",
+          before: fmtNullableEur(reqRow.selectedOptionPriceCents),
+          after: fmtNullableEur(selectedOptionPriceCents)
+        },
+        {
+          field: "shippingCents",
+          label: "Shipping Fee",
+          before: formatEur(reqRow.shippingCents),
+          after: formatEur(shippingCents)
+        },
+        {
+          field: "importFeeCents",
+          label: "Import / Customs Fee",
+          before: formatEur(reqRow.importFeeCents),
+          after: formatEur(importFeeCents)
+        },
+        {
+          field: "finalAmountCents",
+          label: "Final Invoiced Amount",
+          before: fmtNullableEur(reqRow.finalAmountCents),
+          after: fmtNullableEur(finalAmountCents)
+        },
+        {
+          field: "orderedById",
+          label: "Ordered By",
+          before: fmtUser(reqRow.orderedById),
+          after: fmtUser(nextOrderedById)
+        },
+        {
+          field: "orderedAt",
+          label: "Ordered At",
+          before: fmtNullableTs(reqRow.orderedAt),
+          after: fmtNullableTs(orderedAt)
+        },
+        {
+          field: "invoicedById",
+          label: "Invoiced By",
+          before: fmtUser(reqRow.invoicedById),
+          after: fmtUser(nextInvoicedById)
+        },
+        {
+          field: "invoicedAt",
+          label: "Invoiced At",
+          before: fmtNullableTs(reqRow.invoicedAt),
+          after: fmtNullableTs(invoicedAt)
+        },
+        {
+          field: "archivedAt",
+          label: "Archived At",
+          before: fmtNullableTs(reqRow.archivedAt),
+          after: fmtNullableTs(archivedAt)
+        },
+        {
+          field: "createdAt",
+          label: "Created At",
+          before: formatDateTime(reqRow.createdAt),
+          after: formatDateTime(createdAt)
+        }
+      ]);
+
+      const extraLines = [...optionSync.changeNotes, ...attSync.changeNotes];
+      const totalChanges = changes.length + extraLines.length;
+      const cleanReason = params.editReason?.trim() || "";
+
+      if (totalChanges === 0 && !cleanReason) {
+        return { requestCode: reqRow.requestCode, changedCount: 0 };
+      }
+
+      const now = new Date();
+      await tx
+        .update(purchaseRequests)
+        .set({
+          requestCode: nextRequestCode,
+          seasonId: params.seasonId,
+          department: params.department,
+          carSystem: nextCarSystem,
+          title: nextTitle,
+          explanation: nextExplanation,
+          status: params.status,
+          creatorId: params.creatorId,
+          hasApproverResponse: params.hasApproverResponse,
+          selectedOptionId: optionSync.selectedOptionId,
+          selectedOptionPriceCents,
+          shippingCents,
+          importFeeCents,
+          finalAmountCents,
+          orderedById: nextOrderedById,
+          orderedAt,
+          invoicedById: nextInvoicedById,
+          invoicedAt,
+          archivedAt,
+          createdAt,
+          version: reqRow.version + 1,
+          updatedAt: now
+        })
+        .where(eq(purchaseRequests.id, reqRow.id));
+
+      const logText = formatDiffSummaryLines({
+        changes,
+        extraLines,
+        reason: cleanReason
+      });
+
+      await tx.insert(requestTimeline).values({
+        requestId: reqRow.id,
+        actorId: actor.id,
+        eventType: "master_edited",
+        fromStatus: reqRow.status,
+        toStatus: params.status,
+        comment: logText,
+        metadataJson: {
+          reason: cleanReason || null,
+          changes,
+          optionChanges: optionSync.changeNotes,
+          attachmentChanges: attSync.changeNotes
+        }
+      });
+
+      const changedLabels = [
+        ...changes.map(c => c.label),
+        ...(optionSync.changeNotes.length > 0 ? ["Buying Options"] : []),
+        ...(attSync.changeNotes.length > 0 ? ["Attachments"] : [])
+      ];
+
+      await recordAuditLog(tx, {
+        seasonId: params.seasonId,
+        actorId: actor.id,
+        actorLabel: `${actor.fullName} (Master)`,
+        action: "master_request_edited",
+        targetType: "request",
+        targetId: reqRow.id,
+        targetCode: nextRequestCode,
+        summary: `Master edited ${nextRequestCode} "${nextTitle}" (${changedLabels.join(", ") || "note added"})`,
+        details: {
+          previousRequestCode: reqRow.requestCode,
+          nextRequestCode,
+          reason: cleanReason || null,
+          changes,
+          optionChanges: optionSync.changeNotes,
+          attachmentChanges: attSync.changeNotes
+        }
+      });
+
+      return { requestCode: nextRequestCode, changedCount: Math.max(1, totalChanges) };
+    });
+
+    await Promise.all(removedKeys.map(k => deleteStoredFileQuietly(k)));
+    return result;
+  } catch (err) {
+    await Promise.all(savedUploads.map(u => deleteStoredFileQuietly(u.saved.storageKey)));
+    throw err;
+  }
+}
+
+/** Master-only permanent deletion of a purchase request, its options, timeline, and attachments. */
+export async function masterDeletePurchaseRequest(
+  actor: PublicUser,
+  requestId: string,
+  reason: string
+): Promise<{ requestCode: string; title: string }> {
+  if (actor.role !== "master") {
+    throw new Error("FORBIDDEN: Master account privileges required.");
+  }
+  await ensureDbReady();
+  const db = getDb();
+  const cleanReason = reason.trim();
+
+  let removedKeys: string[] = [];
+  const deletedInfo = await db.transaction(async tx => {
+    const [reqRow] = await tx
+      .select()
+      .from(purchaseRequests)
+      .where(eq(purchaseRequests.id, requestId))
+      .limit(1);
+    if (!reqRow) throw new Error("Purchase request not found.");
+
+    const attResult = await purgeEntityAttachments(tx, "request", reqRow.id);
+    removedKeys = attResult.removedKeys;
+
+    await tx.delete(purchaseRequests).where(eq(purchaseRequests.id, reqRow.id));
+
+    await recordAuditLog(tx, {
+      seasonId: reqRow.seasonId,
+      actorId: actor.id,
+      actorLabel: `${actor.fullName} (Master)`,
+      action: "master_request_deleted",
+      targetType: "request",
+      targetId: reqRow.id,
+      targetCode: reqRow.requestCode,
+      summary: `Master deleted request ${reqRow.requestCode} "${reqRow.title}" (${REQUEST_STATUS_LABELS[reqRow.status]})${cleanReason ? ` — Reason: ${cleanReason}` : ""}`,
+      details: {
+        reason: cleanReason || null,
+        deletedAttachmentCount: attResult.count,
+        snapshot: {
+          requestCode: reqRow.requestCode,
+          department: reqRow.department,
+          title: reqRow.title,
+          status: reqRow.status,
+          finalAmountCents: reqRow.finalAmountCents,
+          selectedOptionPriceCents: reqRow.selectedOptionPriceCents,
+          shippingCents: reqRow.shippingCents,
+          importFeeCents: reqRow.importFeeCents
+        }
+      }
+    });
+
+    return { requestCode: reqRow.requestCode, title: reqRow.title };
+  });
+
+  await Promise.all(removedKeys.map(k => deleteStoredFileQuietly(k)));
+  return deletedInfo;
 }

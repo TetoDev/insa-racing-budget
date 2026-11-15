@@ -92,3 +92,20 @@ export function toIsoDateInput(isoOrDate: string | Date | null | undefined): str
   if (Number.isNaN(d.getTime())) return new Date().toISOString().slice(0, 10);
   return d.toISOString().slice(0, 10);
 }
+
+/** Formats an ISO timestamp or Date for an HTML `<input type="datetime-local">` in local time. */
+export function toDateTimeLocalInput(isoOrDate: string | Date | null | undefined): string {
+  if (!isoOrDate) return "";
+  const d = typeof isoOrDate === "string" ? new Date(isoOrDate) : isoOrDate;
+  if (Number.isNaN(d.getTime())) return "";
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+/** Converts an HTML `<input type="datetime-local">` or ISO string into UTC ISO-8601, or null if blank. */
+export function fromDateTimeLocalInput(raw: string | null | undefined): string | null {
+  if (!raw || !raw.trim()) return null;
+  const d = new Date(raw.trim());
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toISOString();
+}

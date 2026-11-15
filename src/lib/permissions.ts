@@ -36,6 +36,11 @@ export function canManageUsersAndSeasons(role: UserRole | null | undefined): boo
   return role === "master";
 }
 
+/** Master-only unrestricted full edit and deletion of purchase requests and money entries. */
+export function canMasterEditOrDeleteRecord(role: UserRole | null | undefined): boolean {
+  return role === "master";
+}
+
 export function canEditOrWithdrawUnreviewedRequest(params: {
   role: UserRole | null | undefined;
   userId: string;

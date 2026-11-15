@@ -174,6 +174,20 @@ async function runBootstrap(): Promise<void> {
 
       CREATE INDEX IF NOT EXISTS idx_rt_request ON request_timeline(request_id, created_at);
 
+      CREATE TABLE IF NOT EXISTS entry_timeline (
+        id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+        entry_id uuid NOT NULL REFERENCES money_entries(id) ON DELETE CASCADE,
+        actor_id uuid NOT NULL REFERENCES users(id),
+        event_type text NOT NULL,
+        from_status text,
+        to_status text,
+        comment text NOT NULL,
+        metadata_json jsonb,
+        created_at timestamptz NOT NULL DEFAULT now()
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_et_entry ON entry_timeline(entry_id, created_at);
+
       CREATE TABLE IF NOT EXISTS audit_logs (
         id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
         season_id uuid REFERENCES seasons(id) ON DELETE SET NULL,

@@ -38,7 +38,7 @@ import {
   requireUser,
   signOutCurrentUser
 } from "./auth";
-import { cancelProvisionalEntry, getSeasonBudgetSnapshot } from "./budget";
+import { cancelProvisionalEntry, getMoneyEntryItemLog, getSeasonBudgetSnapshot } from "./budget";
 import {
   addRequestComment,
   cancelActiveOrder,
@@ -247,6 +247,19 @@ export const queryAdminPanelData = query(async () => {
     : null;
   return { users, seasons, activeUnresolved };
 }, "admin-panel");
+
+export const queryMasterUsers = query(async () => {
+  "use server";
+  await requireMaster();
+  return listAllUsersForAdmin();
+}, "master-users");
+
+export const queryEntryItemLog = query(async (entryId: string) => {
+  "use server";
+  await requireUser();
+  if (!entryId) return null;
+  return getMoneyEntryItemLog(entryId);
+}, "entry-item-log");
 
 export const postCommentAction = action(async (formData: FormData) => {
   "use server";

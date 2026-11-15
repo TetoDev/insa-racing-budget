@@ -6,6 +6,7 @@ import {
   canExportBudget,
   canManageBudgetEntries,
   canManageUsersAndSeasons,
+  canMasterEditOrDeleteRecord,
   canRespondToCounterProposition,
   canReviewRequest,
   canSelectOptionOrManageOrder
@@ -100,6 +101,10 @@ describe("RBAC permissions matrix", () => {
     expect(canManageBudgetEntries("approver")).toBe(true);
     expect(canExportBudget("approver")).toBe(true);
     expect(canManageUsersAndSeasons("approver")).toBe(false);
+    expect(canMasterEditOrDeleteRecord("approver")).toBe(false);
+    expect(canMasterEditOrDeleteRecord("requestor")).toBe(false);
+    expect(canMasterEditOrDeleteRecord("viewer")).toBe(false);
+    expect(canMasterEditOrDeleteRecord(null)).toBe(false);
   });
 
   it("grants master full rights across workflow, exports, admin, and overrides", () => {
@@ -110,6 +115,7 @@ describe("RBAC permissions matrix", () => {
     expect(canManageBudgetEntries("master")).toBe(true);
     expect(canExportBudget("master")).toBe(true);
     expect(canManageUsersAndSeasons("master")).toBe(true);
+    expect(canMasterEditOrDeleteRecord("master")).toBe(true);
 
     expect(
       canEditOrWithdrawUnreviewedRequest({
