@@ -26,6 +26,8 @@ export async function GET(event: APIEvent) {
     const url = new URL(event.request.url);
     const wantsInline = url.searchParams.get("inline") === "1";
     const dispositionType = wantsInline && isInlineSafeMime(att.mimeType) ? "inline" : "attachment";
+    const asciiFallback =
+      att.originalName.replace(/[^\x20-\x7e]/g, "_").replace(/["\\;]/g, "_") || "download";
     const safeFilename = encodeURIComponent(att.originalName);
 
     return new Response(new Uint8Array(buffer), {
@@ -33,12 +35,15 @@ export async function GET(event: APIEvent) {
       headers: {
         "Content-Type": att.mimeType,
         "Content-Length": String(buffer.length),
-        "Content-Disposition": `${dispositionType}; filename*=UTF-8''${safeFilename}`,
+        "Content-Disposition": `${dispositionType}; filename="${asciiFallback}"; filename*=UTF-8''${safeFilename}`,
         "X-Content-Type-Options": "nosniff",
         "Cache-Control": "private, max-age=3600"
       }
     });
   } catch (err) {
+    if ((err as NodeJS.ErrnoException)?.code === "ENOENT") {
+      return Response.json({ error: "Stored file missing from storage." }, { status: 404 });
+    }
     return apiErrorResponse(err);
   }
 }

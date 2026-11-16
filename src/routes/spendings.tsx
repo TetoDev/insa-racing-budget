@@ -1,8 +1,8 @@
 import { Title } from "@solidjs/meta";
 import { A, createAsync } from "@solidjs/router";
 import { Download, Receipt } from "lucide-solid";
-import { For, Show, createMemo, createSignal } from "solid-js";
-import { useApp } from "~/components/AppContext";
+import { For, Show, Suspense, createMemo, createSignal } from "solid-js";
+import { useApp, useI18n } from "~/components/AppContext";
 import { DepartmentBadge } from "~/components/Badges";
 import { SearchInputBar } from "~/components/SearchInputBar";
 import { filterBudgetItemsByQuery } from "~/lib/budget-analytics";
@@ -11,6 +11,7 @@ import { queryBudgetSnapshot } from "~/server/rpc";
 
 export default function SpendingsPage() {
   const app = useApp();
+  const { locale, t } = useI18n();
   const [search, setSearch] = createSignal("");
 
   const snapshot = createAsync(() => {
@@ -19,8 +20,10 @@ export default function SpendingsPage() {
     return queryBudgetSnapshot({ seasonId: sid, periodUnit: "month" });
   });
 
+  const activeSnapshot = () => snapshot.latest ?? snapshot();
+
   const filteredSpendings = createMemo(() => {
-    const data = snapshot();
+    const data = activeSnapshot();
     if (!data) return [];
     return filterBudgetItemsByQuery(data.spendings, search());
   });
@@ -31,96 +34,105 @@ export default function SpendingsPage() {
 
   return (
     <div class="space-y-5">
-      <Title>Final Spendings — INSA Racing Achats</Title>
+      <Title>{t().spendings.pageTitle} — {t().appName}</Title>
 
       <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
-          <h1 class="text-2xl font-bold text-slate-900">All Final Spendings</h1>
-          <p class="text-sm text-slate-500">
-            Orders finalized with an uploaded invoice and counted toward the final season budget.
+          <h1 class="text-2xl font-bold text-slate-900 dark:text-slate-100">{t().spendings.heading}</h1>
+          <p class="text-sm text-slate-500 dark:text-slate-400">
+            {t().spendings.subtitle}
           </p>
         </div>
 
-        <Show when={snapshot()}>
-          {data => (
-            <div class="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-right">
-              <div class="text-[11px] font-semibold uppercase text-emerald-700">
-                Total Final Spendings
+        <Suspense>
+          <Show when={activeSnapshot()}>
+            {data => (
+              <div class="rounded-xl border border-emerald-200 dark:border-emerald-900/70 bg-emerald-50 dark:bg-emerald-950/50 px-4 py-2.5 text-right">
+                <div class="text-[11px] font-semibold uppercase text-emerald-700 dark:text-emerald-400">
+                  {t().spendings.totalBanner}
+                </div>
+                <div class="text-xl font-extrabold tabular-nums text-emerald-900 dark:text-emerald-200">
+                  {formatEur(data().analytics.finalSpendingsCents, locale())}
+                </div>
               </div>
-              <div class="text-xl font-extrabold tabular-nums text-emerald-900">
-                {formatEur(data().analytics.finalSpendingsCents)}
-              </div>
-            </div>
-          )}
-        </Show>
+            )}
+          </Show>
+        </Suspense>
       </div>
 
-      <Show
-        when={snapshot()}
+      <Suspense
         fallback={
-          <div class="rounded-2xl border border-slate-200 bg-white p-8 text-center text-sm text-slate-400">
-            Loading final spendings...
+          <div class="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-8 text-center text-sm text-slate-400 dark:text-slate-500">
+            {t().spendings.loading}
           </div>
         }
       >
+        <Show
+          when={activeSnapshot()}
+          fallback={
+            <div class="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-8 text-center text-sm text-slate-400 dark:text-slate-500">
+              {t().spendings.loading}
+            </div>
+          }
+        >
         {data => (
           <Show
             when={data().spendings.length > 0}
             fallback={
-              <div class="rounded-2xl border border-dashed border-slate-300 bg-white p-12 text-center space-y-2">
-                <Receipt class="h-8 w-8 text-slate-300 mx-auto" />
-                <p class="text-sm font-medium text-slate-600">
-                  No invoiced spendings recorded yet for this season.
+              <div class="rounded-2xl border border-dashed border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 p-12 text-center space-y-2">
+                <Receipt class="h-8 w-8 text-slate-300 dark:text-slate-600 mx-auto" />
+                <p class="text-sm font-medium text-slate-600 dark:text-slate-400">
+                  {t().spendings.empty}
                 </p>
               </div>
             }
           >
-            <div class="rounded-2xl border border-slate-200 bg-white shadow-xs overflow-hidden">
-              <div class="p-4 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div class="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-xs overflow-hidden">
+              <div class="p-4 border-b border-slate-100 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <SearchInputBar
                   value={search()}
                   onInput={setSearch}
-                  placeholder="Search by ID (e.g. 26-AERO-001), product name, option, or car system..."
+                  placeholder={t().spendings.searchPlaceholder}
                   class="w-full sm:max-w-md"
                 />
-                <div class="text-xs sm:text-sm font-semibold text-slate-600 tabular-nums shrink-0">
+                <div class="text-xs sm:text-sm font-semibold text-slate-600 dark:text-slate-400 tabular-nums shrink-0">
                   <Show
                     when={search().trim().length > 0}
-                    fallback={<span>{data().spendings.length} final spending(s)</span>}
+                    fallback={<span>{t().spendings.spendingCount(data().spendings.length)}</span>}
                   >
                     <span>
-                      Showing {filteredSpendings().length} of {data().spendings.length} ·{" "}
-                      <strong class="text-emerald-800">{formatEur(filteredTotalCents())}</strong>
+                      {t().spendings.showingCount(filteredSpendings().length, data().spendings.length)} ·{" "}
+                      <strong class="text-emerald-800 dark:text-emerald-400">{formatEur(filteredTotalCents(), locale())}</strong>
                     </span>
                   </Show>
                 </div>
               </div>
               <div class="overflow-x-auto">
                 <table class="w-full text-left text-sm">
-                  <thead class="bg-slate-50 border-b border-slate-200 text-xs font-semibold uppercase tracking-wider text-slate-500">
+                  <thead class="bg-slate-50 dark:bg-slate-800/70 border-b border-slate-200 dark:border-slate-800 text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
                     <tr>
-                      <th class="px-4 py-3">ID</th>
-                      <th class="px-4 py-3">Product &amp; Chosen Option</th>
-                      <th class="px-4 py-3">Department</th>
-                      <th class="px-4 py-3 text-right">Base + Fees</th>
-                      <th class="px-4 py-3 text-right">Final Invoiced</th>
-                      <th class="px-4 py-3">Invoiced On</th>
-                      <th class="px-4 py-3">Invoice File</th>
+                      <th class="px-4 py-3">{t().common.idLabel}</th>
+                      <th class="px-4 py-3">{t().spendings.colProductOption}</th>
+                      <th class="px-4 py-3">{t().common.department}</th>
+                      <th class="px-4 py-3 text-right">{t().spendings.colBaseFees}</th>
+                      <th class="px-4 py-3 text-right">{t().spendings.colFinalInvoiced}</th>
+                      <th class="px-4 py-3">{t().spendings.colInvoicedOn}</th>
+                      <th class="px-4 py-3">{t().spendings.colInvoiceFile}</th>
                     </tr>
                   </thead>
-                  <tbody class="divide-y divide-slate-100">
+                  <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
                     <Show
                       when={filteredSpendings().length > 0}
                       fallback={
                         <tr>
-                          <td colSpan={7} class="px-4 py-10 text-center text-sm text-slate-500">
-                            No spendings match "<span class="font-semibold text-slate-700">{search()}</span>".{" "}
+                          <td colSpan={7} class="px-4 py-10 text-center text-sm text-slate-500 dark:text-slate-400">
+                            {t().spendings.noMatchPrefix} "<span class="font-semibold text-slate-700 dark:text-slate-200">{search()}</span>".{" "}
                             <button
                               type="button"
                               onClick={() => setSearch("")}
-                              class="text-red-600 font-semibold hover:underline cursor-pointer"
+                              class="text-red-600 dark:text-red-400 font-semibold hover:underline cursor-pointer"
                             >
-                              Clear search
+                              {t().common.clearSearch}
                             </button>
                           </td>
                         </tr>
@@ -130,11 +142,11 @@ export default function SpendingsPage() {
                         {sp => {
                           const invoiceAtt = () => sp.attachments.find(a => a.kind === "invoice");
                           return (
-                            <tr class="hover:bg-slate-50/80">
+                            <tr class="hover:bg-slate-50/80 dark:hover:bg-slate-800/50">
                               <td class="px-4 py-3 font-mono text-xs font-bold whitespace-nowrap">
                                 <A
                                   href={`/requests/${sp.requestCode}`}
-                                  class="text-red-600 hover:underline"
+                                  class="text-red-600 dark:text-red-400 hover:underline"
                                 >
                                   {sp.requestCode}
                                 </A>
@@ -142,13 +154,13 @@ export default function SpendingsPage() {
                               <td class="px-4 py-3">
                                 <A
                                   href={`/requests/${sp.requestCode}`}
-                                  class="font-semibold text-slate-900 hover:text-red-600"
+                                  class="font-semibold text-slate-900 dark:text-slate-100 hover:text-red-600 dark:hover:text-red-400"
                                 >
                                   {sp.title}
                                 </A>
-                                <div class="text-xs text-slate-500">{sp.chosenOptionLabel}</div>
+                                <div class="text-xs text-slate-500 dark:text-slate-400">{sp.chosenOptionLabel}</div>
                                 <Show when={sp.carSystem}>
-                                  <div class="mt-1 inline-flex items-center rounded bg-slate-100 px-1.5 py-0.5 text-[11px] font-medium text-slate-600">
+                                  <div class="mt-1 inline-flex items-center rounded bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 text-[11px] font-medium text-slate-600 dark:text-slate-300">
                                     {sp.carSystem}
                                   </div>
                                 </Show>
@@ -156,27 +168,29 @@ export default function SpendingsPage() {
                             <td class="px-4 py-3">
                               <DepartmentBadge department={sp.department} />
                             </td>
-                            <td class="px-4 py-3 text-right text-xs tabular-nums text-slate-500">
-                              {formatEur(sp.basePriceCents)} + {formatEur(sp.shippingCents + sp.importFeeCents)}
+                            <td class="px-4 py-3 text-right text-xs tabular-nums text-slate-500 dark:text-slate-400">
+                              {formatEur(sp.basePriceCents, locale())} + {formatEur(sp.shippingCents + sp.importFeeCents, locale())}
                             </td>
-                            <td class="px-4 py-3 text-right tabular-nums font-extrabold text-emerald-800">
-                              {formatEur(sp.finalAmountCents)}
+                            <td class="px-4 py-3 text-right tabular-nums font-extrabold text-emerald-800 dark:text-emerald-400">
+                              {formatEur(sp.finalAmountCents, locale())}
                             </td>
-                            <td class="px-4 py-3 text-xs text-slate-500 whitespace-nowrap">
-                              {formatDate(sp.effectiveDate)}
+                            <td class="px-4 py-3 text-xs text-slate-500 dark:text-slate-400 whitespace-nowrap">
+                              {formatDate(sp.effectiveDate, locale())}
                             </td>
                             <td class="px-4 py-3">
                               <Show
                                 when={invoiceAtt()}
-                                fallback={<span class="text-xs text-slate-400">—</span>}
+                                fallback={<span class="text-xs text-slate-400 dark:text-slate-500">—</span>}
                               >
                                 {att => (
                                   <a
                                     href={`/api/files/${att().id}`}
-                                    class="inline-flex items-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-800 hover:bg-emerald-100"
+                                    download={att().originalName}
+                                    rel="external"
+                                    class="inline-flex items-center gap-1 rounded-lg border border-emerald-200 dark:border-emerald-800/80 bg-emerald-50 dark:bg-emerald-950/60 px-2.5 py-1 text-xs font-semibold text-emerald-800 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-900/60"
                                   >
                                     <Download class="h-3.5 w-3.5" />
-                                    Invoice
+                                    {t().spendings.invoiceDownload}
                                   </a>
                                 )}
                               </Show>
@@ -191,8 +205,9 @@ export default function SpendingsPage() {
               </div>
             </div>
           </Show>
-        )}
-      </Show>
+          )}
+        </Show>
+      </Suspense>
     </div>
   );
 }

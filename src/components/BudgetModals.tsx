@@ -2,12 +2,15 @@ import { FileText, Upload, X } from "lucide-solid";
 import { For, Show, createEffect, createSignal } from "solid-js";
 import { DEPARTMENTS, ENTRY_CATEGORIES, type DepartmentId, type EntryCategory } from "~/lib/constants";
 import { formatCentsPlain, formatEur, toIsoDateInput } from "~/lib/format";
+import { getDepartmentLabel, getEntryCategoryLabel } from "~/lib/i18n";
+import { useI18n } from "./AppContext";
 
 export function LogMoneyEntryModal(props: {
   open: boolean;
   onClose: () => void;
   onSuccess: () => Promise<void>;
 }) {
+  const { locale, t } = useI18n();
   const [title, setTitle] = createSignal("");
   const [category, setCategory] = createSignal<EntryCategory>("sponsorship");
   const [amountEur, setAmountEur] = createSignal("");
@@ -34,7 +37,7 @@ export function LogMoneyEntryModal(props: {
 
       const res = await fetch("/api/entries", { method: "POST", body: fd });
       const json = await res.json();
-      if (!res.ok) throw new Error(json.error || "Failed to log money entry.");
+      if (!res.ok) throw new Error(json.error || t().budgetModals.failedLogErr);
 
       setTitle("");
       setAmountEur("");
@@ -44,7 +47,7 @@ export function LogMoneyEntryModal(props: {
       props.onClose();
       await props.onSuccess();
     } catch (e2) {
-      setErr(e2 instanceof Error ? e2.message : "Failed to save money entry.");
+      setErr(e2 instanceof Error ? e2.message : t().budgetModals.failedSaveEntryErr);
     } finally {
       setBusy(false);
     }
@@ -52,82 +55,92 @@ export function LogMoneyEntryModal(props: {
 
   return (
     <Show when={props.open}>
-      <div class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 p-4 overflow-y-auto">
-        <form onSubmit={submit} class="w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl space-y-4">
+      <div class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 dark:bg-black/75 p-4 overflow-y-auto">
+        <form onSubmit={submit} class="w-full max-w-lg rounded-2xl border border-transparent dark:border-slate-800 bg-white dark:bg-slate-900 p-6 shadow-2xl space-y-4">
           <div class="flex items-center justify-between">
-            <h3 class="text-lg font-bold text-slate-900">Log Money Entry (EUR)</h3>
+            <h3 class="text-lg font-bold text-slate-900 dark:text-slate-100">{t().budgetModals.logTitle}</h3>
             <button
               type="button"
               onClick={props.onClose}
-              class="text-slate-400 hover:text-slate-700 cursor-pointer"
+              class="text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 cursor-pointer"
             >
               <X class="h-5 w-5" />
             </button>
           </div>
 
           <div>
-            <label class="block text-xs font-semibold text-slate-600 mb-1">Entry Title / Entity</label>
+            <label class="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1">
+              {t().budgetModals.entryTitleEntity}
+            </label>
             <input
               type="text"
               required
               value={title()}
               onInput={e => setTitle(e.currentTarget.value)}
-              placeholder="e.g. FSDIE Grant Allocation 2026"
-              class="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+              placeholder={t().budgetModals.entryTitlePlaceholder}
+              class="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:border-red-500 focus:outline-none"
             />
           </div>
 
           <div class="grid grid-cols-3 gap-3">
             <div>
-              <label class="block text-xs font-semibold text-slate-600 mb-1">Category</label>
+              <label class="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1">
+                {t().common.category}
+              </label>
               <select
                 value={category()}
                 onChange={e => setCategory(e.currentTarget.value as EntryCategory)}
-                class="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-sm"
+                class="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 px-2.5 py-2 text-sm text-slate-900 dark:text-slate-100 focus:border-red-500 focus:outline-none"
               >
                 <For each={ENTRY_CATEGORIES}>
-                  {c => <option value={c.id}>{c.label}</option>}
+                  {c => <option value={c.id}>{getEntryCategoryLabel(locale(), c.id)}</option>}
                 </For>
               </select>
             </div>
             <div>
-              <label class="block text-xs font-semibold text-slate-600 mb-1">Amount (EUR)</label>
+              <label class="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1">
+                {t().budgetModals.amountEur}
+              </label>
               <input
                 type="text"
                 required
                 value={amountEur()}
                 onInput={e => setAmountEur(e.currentTarget.value)}
                 placeholder="2500.00"
-                class="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm tabular-nums"
+                class="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 tabular-nums placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:border-red-500 focus:outline-none"
               />
             </div>
             <div>
-              <label class="block text-xs font-semibold text-slate-600 mb-1">Entry Date</label>
+              <label class="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1">
+                {t().budgetModals.entryDate}
+              </label>
               <input
                 type="date"
                 required
                 value={entryDate()}
                 onInput={e => setEntryDate(e.currentTarget.value)}
-                class="w-full rounded-lg border border-slate-200 px-2.5 py-2 text-sm"
+                class="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 px-2.5 py-2 text-sm text-slate-900 dark:text-slate-100 focus:border-red-500 focus:outline-none"
               />
             </div>
           </div>
 
           <div>
-            <label class="block text-xs font-semibold text-slate-600 mb-1">Comment</label>
+            <label class="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1">
+              {t().common.comment}
+            </label>
             <textarea
               required
               rows={2}
               value={comment()}
               onInput={e => setComment(e.currentTarget.value)}
-              placeholder="Agreement reference, expected payment terms, or sponsor contact..."
-              class="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+              placeholder={t().budgetModals.commentPlaceholder}
+              class="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:border-red-500 focus:outline-none"
             />
           </div>
 
-          <label class="block rounded-lg border border-dashed border-slate-300 bg-slate-50 p-3 text-xs cursor-pointer">
+          <label class="block rounded-lg border border-dashed border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60 p-3 text-xs text-slate-700 dark:text-slate-300 cursor-pointer">
             <span class="font-semibold block mb-1">
-              Supporting Documents (Optional — contracts, award letters)
+              {t().budgetModals.supportingDocsOpt}
             </span>
             <input
               type="file"
@@ -136,9 +149,9 @@ export function LogMoneyEntryModal(props: {
             />
           </label>
 
-          <label class="block rounded-lg border border-dashed border-emerald-300 bg-emerald-50/50 p-3 text-xs cursor-pointer">
-            <span class="font-semibold text-emerald-900 block mb-1">
-              Invoice / Payment Proof (Leave empty for Provisional; attach to mark Confirmed immediately)
+          <label class="block rounded-lg border border-dashed border-emerald-300 dark:border-emerald-800/80 bg-emerald-50/50 dark:bg-emerald-950/40 p-3 text-xs text-emerald-900 dark:text-emerald-200 cursor-pointer">
+            <span class="font-semibold text-emerald-900 dark:text-emerald-200 block mb-1">
+              {t().budgetModals.invoiceProofDesc}
             </span>
             <input
               type="file"
@@ -147,23 +160,23 @@ export function LogMoneyEntryModal(props: {
           </label>
 
           <Show when={err()}>
-            <p class="text-xs text-red-600">{err()}</p>
+            <p class="text-xs text-red-600 dark:text-red-400">{err()}</p>
           </Show>
 
           <div class="flex justify-end gap-2">
             <button
               type="button"
               onClick={props.onClose}
-              class="rounded-lg border border-slate-200 px-4 py-2 text-xs font-semibold text-slate-700 cursor-pointer"
+              class="rounded-lg border border-slate-200 dark:border-slate-700 px-4 py-2 text-xs font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer"
             >
-              Cancel
+              {t().common.cancel}
             </button>
             <button
               type="submit"
               disabled={busy()}
               class="rounded-lg bg-emerald-600 px-5 py-2 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-50 cursor-pointer"
             >
-              {busy() ? "Saving..." : "Save Money Entry"}
+              {busy() ? t().common.saving : t().budgetModals.saveEntryBtn}
             </button>
           </div>
         </form>
@@ -184,6 +197,7 @@ export function ConfirmProvisionalEntryModal(props: {
   onClose: () => void;
   onSuccess: () => Promise<void>;
 }) {
+  const { t } = useI18n();
   const [invoiceFile, setInvoiceFile] = createSignal<File | null>(null);
   const [amountEur, setAmountEur] = createSignal("");
   const [comment, setComment] = createSignal("");
@@ -191,9 +205,9 @@ export function ConfirmProvisionalEntryModal(props: {
   const [err, setErr] = createSignal("");
 
   createEffect(() => {
-    const t = props.target;
-    if (t) {
-      setAmountEur(formatCentsPlain(t.initialAmountCents));
+    const t2 = props.target;
+    if (t2) {
+      setAmountEur(formatCentsPlain(t2.initialAmountCents));
       setComment("");
       setInvoiceFile(null);
       setErr("");
@@ -202,10 +216,10 @@ export function ConfirmProvisionalEntryModal(props: {
 
   async function submit(e: SubmitEvent) {
     e.preventDefault();
-    const t = props.target;
+    const target = props.target;
     const inv = invoiceFile();
-    if (!t || !inv) {
-      setErr("Invoice file is required to confirm a provisional entry.");
+    if (!target || !inv) {
+      setErr(t().budgetModals.invoiceRequiredConfirmErr);
       return;
     }
     setBusy(true);
@@ -216,14 +230,14 @@ export function ConfirmProvisionalEntryModal(props: {
       fd.set("confirmedAmountEur", amountEur());
       fd.set("comment", comment());
 
-      const res = await fetch(`/api/entries/${t.id}/confirm`, { method: "POST", body: fd });
+      const res = await fetch(`/api/entries/${target.id}/confirm`, { method: "POST", body: fd });
       const json = await res.json();
-      if (!res.ok) throw new Error(json.error || "Failed to confirm entry.");
+      if (!res.ok) throw new Error(json.error || t().budgetModals.failedConfirmErr);
 
       props.onClose();
       await props.onSuccess();
     } catch (e2) {
-      setErr(e2 instanceof Error ? e2.message : "Failed to confirm entry.");
+      setErr(e2 instanceof Error ? e2.message : t().budgetModals.failedConfirmErr);
     } finally {
       setBusy(false);
     }
@@ -232,24 +246,26 @@ export function ConfirmProvisionalEntryModal(props: {
   return (
     <Show when={props.target}>
       {target => (
-        <div class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 p-4">
-          <form onSubmit={submit} class="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl space-y-4">
+        <div class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 dark:bg-black/75 p-4">
+          <form onSubmit={submit} class="w-full max-w-md rounded-2xl border border-transparent dark:border-slate-800 bg-white dark:bg-slate-900 p-6 shadow-2xl space-y-4">
             <div class="flex items-center justify-between">
-              <h3 class="text-base font-bold text-slate-900">Confirm Entry {target().entryCode}</h3>
+              <h3 class="text-base font-bold text-slate-900 dark:text-slate-100">
+                {t().budgetModals.confirmTitle(target().entryCode)}
+              </h3>
               <button
                 type="button"
                 onClick={props.onClose}
-                class="text-slate-400 hover:text-slate-700 cursor-pointer"
+                class="text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 cursor-pointer"
               >
                 <X class="h-5 w-5" />
               </button>
             </div>
-            <p class="text-xs text-slate-500">{target().title}</p>
+            <p class="text-xs text-slate-500 dark:text-slate-400">{target().title}</p>
 
-            <label class="flex items-center gap-2 rounded-lg border border-dashed border-emerald-400 bg-emerald-50 p-3 text-xs font-medium text-emerald-900 cursor-pointer">
-              <Upload class="h-4 w-4 text-emerald-600" />
+            <label class="flex items-center gap-2 rounded-lg border border-dashed border-emerald-400 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950/50 p-3 text-xs font-medium text-emerald-900 dark:text-emerald-200 cursor-pointer">
+              <Upload class="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
               <span class="truncate">
-                {invoiceFile() ? invoiceFile()!.name : "Select invoice / proof file..."}
+                {invoiceFile() ? invoiceFile()!.name : t().budgetModals.selectInvoiceFilePrompt}
               </span>
               <input
                 type="file"
@@ -260,45 +276,49 @@ export function ConfirmProvisionalEntryModal(props: {
             </label>
 
             <div>
-              <label class="block text-xs font-semibold text-slate-600 mb-1">Confirmed Amount (EUR)</label>
+              <label class="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1">
+                {t().budgetModals.confirmedAmountLabel}
+              </label>
               <input
                 type="text"
                 required
                 value={amountEur()}
                 onInput={e => setAmountEur(e.currentTarget.value)}
-                class="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm tabular-nums"
+                class="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 tabular-nums focus:border-red-500 focus:outline-none"
               />
             </div>
 
             <div>
-              <label class="block text-xs font-semibold text-slate-600 mb-1">Confirmation Note (optional)</label>
+              <label class="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1">
+                {t().budgetModals.confirmNoteOpt}
+              </label>
               <input
                 type="text"
                 value={comment()}
                 onInput={e => setComment(e.currentTarget.value)}
-                placeholder="Received via bank transfer..."
-                class="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                placeholder={t().budgetModals.confirmNotePlaceholder}
+                class="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:border-red-500 focus:outline-none"
               />
             </div>
 
             <Show when={err()}>
-              <p class="text-xs text-red-600">{err()}</p>
+              <p class="text-xs text-red-600 dark:text-red-400">{err()}</p>
             </Show>
 
             <div class="flex justify-end gap-2">
               <button
                 type="button"
                 onClick={props.onClose}
-                class="rounded-lg border border-slate-200 px-4 py-2 text-xs font-semibold text-slate-700 cursor-pointer"
+                class="rounded-lg border border-slate-200 dark:border-slate-700 px-4 py-2 text-xs font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer"
               >
-                Cancel
+                {t().common.cancel}
               </button>
               <button
                 type="submit"
                 disabled={busy()}
                 class="rounded-lg bg-emerald-600 px-4 py-2 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-50 cursor-pointer"
               >
-                {busy() ? "Confirming..." : "Confirm Entry"}
+                {busy() ? t().budgetModals.confirmingBtn : t().budgetModals.confirmBtn}
               </button>
             </div>
           </form>
@@ -324,6 +344,7 @@ export function EditProvisionalEntryModal(props: {
   onClose: () => void;
   onSuccess: () => Promise<void>;
 }) {
+  const { locale, t } = useI18n();
   const [title, setTitle] = createSignal("");
   const [category, setCategory] = createSignal<EntryCategory>("sponsorship");
   const [amountEur, setAmountEur] = createSignal("");
@@ -335,13 +356,13 @@ export function EditProvisionalEntryModal(props: {
   const [err, setErr] = createSignal("");
 
   createEffect(() => {
-    const t = props.target;
-    if (t) {
-      setTitle(t.title);
-      setCategory(t.category);
-      setAmountEur(formatCentsPlain(t.initialAmountCents));
-      setEntryDate(toIsoDateInput(t.entryDate));
-      setComment(t.comment);
+    const t2 = props.target;
+    if (t2) {
+      setTitle(t2.title);
+      setCategory(t2.category);
+      setAmountEur(formatCentsPlain(t2.initialAmountCents));
+      setEntryDate(toIsoDateInput(t2.entryDate));
+      setComment(t2.comment);
       setRemoveIds([]);
       setNewDocs([]);
       setErr("");
@@ -354,8 +375,8 @@ export function EditProvisionalEntryModal(props: {
 
   async function submit(e: SubmitEvent) {
     e.preventDefault();
-    const t = props.target;
-    if (!t) return;
+    const target = props.target;
+    if (!target) return;
     setBusy(true);
     setErr("");
     try {
@@ -373,14 +394,14 @@ export function EditProvisionalEntryModal(props: {
       );
       for (const f of newDocs()) fd.append("supportingFiles", f);
 
-      const res = await fetch(`/api/entries/${t.id}/edit`, { method: "POST", body: fd });
+      const res = await fetch(`/api/entries/${target.id}/edit`, { method: "POST", body: fd });
       const json = await res.json();
-      if (!res.ok) throw new Error(json.error || "Failed to update provisional entry.");
+      if (!res.ok) throw new Error(json.error || t().budgetModals.failedUpdateProvErr);
 
       props.onClose();
       await props.onSuccess();
     } catch (e2) {
-      setErr(e2 instanceof Error ? e2.message : "Failed to save changes.");
+      setErr(e2 instanceof Error ? e2.message : t().budgetModals.failedUpdateProvErr);
     } finally {
       setBusy(false);
     }
@@ -389,87 +410,97 @@ export function EditProvisionalEntryModal(props: {
   return (
     <Show when={props.target}>
       {target => (
-        <div class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 p-4 overflow-y-auto">
-          <form onSubmit={submit} class="w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl space-y-4">
+        <div class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 dark:bg-black/75 p-4 overflow-y-auto">
+          <form onSubmit={submit} class="w-full max-w-lg rounded-2xl border border-transparent dark:border-slate-800 bg-white dark:bg-slate-900 p-6 shadow-2xl space-y-4">
             <div class="flex items-center justify-between">
-              <h3 class="text-base font-bold text-slate-900">
-                Edit Provisional Entry {target().entryCode}
+              <h3 class="text-base font-bold text-slate-900 dark:text-slate-100">
+                {t().budgetModals.editProvTitle(target().entryCode)}
               </h3>
               <button
                 type="button"
                 onClick={props.onClose}
-                class="text-slate-400 hover:text-slate-700 cursor-pointer"
+                class="text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 cursor-pointer"
               >
                 <X class="h-5 w-5" />
               </button>
             </div>
 
             <div>
-              <label class="block text-xs font-semibold text-slate-600 mb-1">Title / Entity</label>
+              <label class="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1">
+                {t().budgetModals.titleEntityLabel}
+              </label>
               <input
                 type="text"
                 required
                 minLength={2}
                 value={title()}
                 onInput={e => setTitle(e.currentTarget.value)}
-                class="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                class="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 focus:border-red-500 focus:outline-none"
               />
             </div>
 
             <div class="grid grid-cols-3 gap-3">
               <div>
-                <label class="block text-xs font-semibold text-slate-600 mb-1">Category</label>
+                <label class="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1">
+                  {t().common.category}
+                </label>
                 <select
                   value={category()}
                   onChange={e => setCategory(e.currentTarget.value as EntryCategory)}
-                  class="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-sm"
+                  class="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 px-2.5 py-2 text-sm text-slate-900 dark:text-slate-100 focus:border-red-500 focus:outline-none"
                 >
                   <For each={ENTRY_CATEGORIES}>
-                    {c => <option value={c.id}>{c.label}</option>}
+                    {c => <option value={c.id}>{getEntryCategoryLabel(locale(), c.id)}</option>}
                   </For>
                 </select>
               </div>
               <div>
-                <label class="block text-xs font-semibold text-slate-600 mb-1">Expected EUR</label>
+                <label class="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1">
+                  {t().budgetModals.expectedEurLabel}
+                </label>
                 <input
                   type="text"
                   required
                   value={amountEur()}
                   onInput={e => setAmountEur(e.currentTarget.value)}
-                  class="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm tabular-nums"
+                  class="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 tabular-nums focus:border-red-500 focus:outline-none"
                 />
               </div>
               <div>
-                <label class="block text-xs font-semibold text-slate-600 mb-1">Expected Date</label>
+                <label class="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1">
+                  {t().budgetModals.expectedDateLabel}
+                </label>
                 <input
                   type="date"
                   required
                   value={entryDate()}
                   onInput={e => setEntryDate(e.currentTarget.value)}
-                  class="w-full rounded-lg border border-slate-200 px-2.5 py-2 text-sm"
+                  class="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 px-2.5 py-2 text-sm text-slate-900 dark:text-slate-100 focus:border-red-500 focus:outline-none"
                 />
               </div>
             </div>
 
             <div>
-              <label class="block text-xs font-semibold text-slate-600 mb-1">Comment</label>
+              <label class="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1">
+                {t().common.comment}
+              </label>
               <textarea
                 required
                 rows={2}
                 value={comment()}
                 onInput={e => setComment(e.currentTarget.value)}
-                class="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                class="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 focus:border-red-500 focus:outline-none"
               />
             </div>
 
             <Show when={target().attachments.length > 0}>
               <div class="space-y-1.5">
-                <div class="text-xs font-semibold text-slate-600">
-                  Existing Documents (check to remove)
+                <div class="text-xs font-semibold text-slate-600 dark:text-slate-400">
+                  {t().budgetModals.existingDocsRemove}
                 </div>
                 <For each={target().attachments}>
                   {att => (
-                    <label class="flex items-center gap-2 text-xs text-slate-700 cursor-pointer">
+                    <label class="flex items-center gap-2 text-xs text-slate-700 dark:text-slate-300 cursor-pointer">
                       <input
                         type="checkbox"
                         checked={removeIds().includes(att.id)}
@@ -483,8 +514,8 @@ export function EditProvisionalEntryModal(props: {
               </div>
             </Show>
 
-            <label class="block rounded-lg border border-dashed border-slate-300 bg-slate-50 p-3 text-xs cursor-pointer">
-              <span class="font-semibold block mb-1">Add Supporting Documents (Optional)</span>
+            <label class="block rounded-lg border border-dashed border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60 p-3 text-xs text-slate-700 dark:text-slate-300 cursor-pointer">
+              <span class="font-semibold block mb-1">{t().budgetModals.addSupportingDocsOpt}</span>
               <input
                 type="file"
                 multiple
@@ -495,23 +526,23 @@ export function EditProvisionalEntryModal(props: {
             </label>
 
             <Show when={err()}>
-              <p class="text-xs text-red-600">{err()}</p>
+              <p class="text-xs text-red-600 dark:text-red-400">{err()}</p>
             </Show>
 
             <div class="flex justify-end gap-2">
               <button
                 type="button"
                 onClick={props.onClose}
-                class="rounded-lg border border-slate-200 px-4 py-2 text-xs font-semibold text-slate-700 cursor-pointer"
+                class="rounded-lg border border-slate-200 dark:border-slate-700 px-4 py-2 text-xs font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer"
               >
-                Cancel
+                {t().common.cancel}
               </button>
               <button
                 type="submit"
                 disabled={busy()}
-                class="rounded-lg bg-slate-900 px-4 py-2 text-xs font-semibold text-white hover:bg-slate-800 disabled:opacity-50 cursor-pointer"
+                class="rounded-lg bg-slate-900 dark:bg-slate-100 px-4 py-2 text-xs font-semibold text-white dark:text-slate-950 hover:bg-slate-800 dark:hover:bg-white disabled:opacity-50 cursor-pointer"
               >
-                {busy() ? "Saving..." : "Save Changes"}
+                {busy() ? t().common.saving : t().common.saveChanges}
               </button>
             </div>
           </form>
@@ -529,6 +560,7 @@ export function DepartmentBudgetsModal(props: {
   onClose: () => void;
   onSuccess: () => Promise<void>;
 }) {
+  const { locale, t } = useI18n();
   const [values, setValues] = createSignal<Record<DepartmentId, string>>({
     powertrain: "0",
     chassis: "0",
@@ -577,12 +609,12 @@ export function DepartmentBudgetsModal(props: {
         body: JSON.stringify({ seasonId: props.seasonId, allocations })
       });
       const json = await res.json();
-      if (!res.ok) throw new Error(json.error || "Failed to update department budgets.");
+      if (!res.ok) throw new Error(json.error || t().budgetModals.failedEnvelopesErr);
 
       props.onClose();
       await props.onSuccess();
     } catch (e2) {
-      setErr(e2 instanceof Error ? e2.message : "Failed to save allocations.");
+      setErr(e2 instanceof Error ? e2.message : t().budgetModals.failedEnvelopesErr);
     } finally {
       setBusy(false);
     }
@@ -590,19 +622,21 @@ export function DepartmentBudgetsModal(props: {
 
   return (
     <Show when={props.open}>
-      <div class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 p-4 overflow-y-auto">
-        <form onSubmit={submit} class="w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl space-y-4">
+      <div class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 dark:bg-black/75 p-4 overflow-y-auto">
+        <form onSubmit={submit} class="w-full max-w-lg rounded-2xl border border-transparent dark:border-slate-800 bg-white dark:bg-slate-900 p-6 shadow-2xl space-y-4">
           <div class="flex items-center justify-between">
             <div>
-              <h3 class="text-base font-bold text-slate-900">Department Budget Envelopes</h3>
-              <p class="text-xs text-slate-500">
-                Set advisory target caps (EUR TTC) for {props.seasonName}. Use 0 for no cap.
+              <h3 class="text-base font-bold text-slate-900 dark:text-slate-100">
+                {t().budgetModals.deptBudgetsTitle}
+              </h3>
+              <p class="text-xs text-slate-500 dark:text-slate-400">
+                {t().budgetModals.deptBudgetsDesc(props.seasonName)}
               </p>
             </div>
             <button
               type="button"
               onClick={props.onClose}
-              class="text-slate-400 hover:text-slate-700 cursor-pointer"
+              class="text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 cursor-pointer"
             >
               <X class="h-5 w-5" />
             </button>
@@ -612,13 +646,13 @@ export function DepartmentBudgetsModal(props: {
             <For each={DEPARTMENTS}>
               {dept => (
                 <div class="grid grid-cols-3 items-center gap-3">
-                  <div class="col-span-2 flex items-center gap-2 text-sm font-medium text-slate-800">
+                  <div class="col-span-2 flex items-center gap-2 text-sm font-medium text-slate-800 dark:text-slate-200">
                     <span
                       class="h-2.5 w-2.5 rounded-full shrink-0"
                       style={{ "background-color": dept.color }}
                     />
-                    <span>{dept.label}</span>
-                    <span class="text-xs font-mono text-slate-400">({dept.code})</span>
+                    <span>{getDepartmentLabel(locale(), dept.id)}</span>
+                    <span class="text-xs font-mono text-slate-400 dark:text-slate-500">({dept.code})</span>
                   </div>
                   <input
                     type="text"
@@ -627,38 +661,38 @@ export function DepartmentBudgetsModal(props: {
                       setValues(prev => ({ ...prev, [dept.id]: e.currentTarget.value }))
                     }
                     placeholder="0.00"
-                    class="rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-right tabular-nums focus:border-red-500 focus:outline-none"
+                    class="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-1.5 text-sm text-slate-900 dark:text-slate-100 text-right tabular-nums focus:border-red-500 focus:outline-none"
                   />
                 </div>
               )}
             </For>
           </div>
 
-          <div class="rounded-lg bg-slate-50 border border-slate-200 px-3 py-2 flex items-center justify-between text-xs">
-            <span class="font-semibold text-slate-600">Total Allocated Envelopes</span>
-            <span class="font-extrabold tabular-nums text-slate-900">
-              {formatEur(totalEnteredEur())}
+          <div class="rounded-lg bg-slate-50 dark:bg-slate-800/70 border border-slate-200 dark:border-slate-700 px-3 py-2 flex items-center justify-between text-xs">
+            <span class="font-semibold text-slate-600 dark:text-slate-300">{t().budgetModals.totalAllocated}</span>
+            <span class="font-extrabold tabular-nums text-slate-900 dark:text-slate-100">
+              {formatEur(totalEnteredEur(), locale())}
             </span>
           </div>
 
           <Show when={err()}>
-            <p class="text-xs text-red-600">{err()}</p>
+            <p class="text-xs text-red-600 dark:text-red-400">{err()}</p>
           </Show>
 
           <div class="flex justify-end gap-2">
             <button
               type="button"
               onClick={props.onClose}
-              class="rounded-lg border border-slate-200 px-4 py-2 text-xs font-semibold text-slate-700 cursor-pointer"
+              class="rounded-lg border border-slate-200 dark:border-slate-700 px-4 py-2 text-xs font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer"
             >
-              Cancel
+              {t().common.cancel}
             </button>
             <button
               type="submit"
               disabled={busy()}
-              class="rounded-lg bg-slate-900 px-5 py-2 text-xs font-semibold text-white hover:bg-slate-800 disabled:opacity-50 cursor-pointer"
+              class="rounded-lg bg-slate-900 dark:bg-slate-100 px-5 py-2 text-xs font-semibold text-white dark:text-slate-950 hover:bg-slate-800 dark:hover:bg-white disabled:opacity-50 cursor-pointer"
             >
-              {busy() ? "Saving..." : "Save Envelopes"}
+              {busy() ? t().common.saving : t().budgetModals.saveEnvelopesBtn}
             </button>
           </div>
         </form>

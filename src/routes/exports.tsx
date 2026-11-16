@@ -2,17 +2,19 @@ import { Title } from "@solidjs/meta";
 import { useSearchParams } from "@solidjs/router";
 import { Archive, Download, FileSpreadsheet, FolderArchive } from "lucide-solid";
 import { For, Show, createSignal } from "solid-js";
-import { useApp } from "~/components/AppContext";
+import { useApp, useI18n } from "~/components/AppContext";
 import {
   BUDGET_SECTIONS,
   RATE_PERIODS,
   type BudgetSectionId,
   type RatePeriod
 } from "~/lib/constants";
+import { getBudgetSectionLabel, getRatePeriodLabel, getSeasonStatusLabel } from "~/lib/i18n";
 import { canExportBudget } from "~/lib/permissions";
 
 export default function ExportsPage() {
   const app = useApp();
+  const { locale, t } = useI18n();
   const [searchParams] = useSearchParams();
 
   const initialPeriod = (): RatePeriod => {
@@ -66,7 +68,7 @@ export default function ExportsPage() {
     setError("");
     setExportedMessage("");
     if (selectedSections().length === 0) {
-      setError("Select at least one budget section to export.");
+      setError(t().exports.selectOneError);
       return;
     }
     setDownloading(true);
@@ -82,13 +84,14 @@ export default function ExportsPage() {
           sections: selectedSections(),
           fromDate: fromDate() || undefined,
           toDate: toDate() || undefined,
-          ratePeriod: ratePeriod()
+          ratePeriod: ratePeriod(),
+          locale: locale()
         })
       });
 
       if (!res.ok) {
         const json = await res.json().catch(() => ({}));
-        throw new Error(json.error || "Failed to generate export.");
+        throw new Error(json.error || t().exports.failedError);
       }
 
       const disposition = res.headers.get("content-disposition") || "";
@@ -104,9 +107,9 @@ export default function ExportsPage() {
       link.click();
       link.remove();
       URL.revokeObjectURL(url);
-      setExportedMessage(`Downloaded ${filename}`);
+      setExportedMessage(t().exports.downloadedMsg(filename));
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Export failed.");
+      setError(err instanceof Error ? err.message : t().exports.failedError);
     } finally {
       setDownloading(false);
     }
@@ -114,42 +117,43 @@ export default function ExportsPage() {
 
   return (
     <div class="max-w-4xl space-y-6">
-      <Title>Export Budget Declarations — INSA Racing Achats</Title>
+      <Title>{t().exports.pageTitle} — {t().appName}</Title>
 
       <div>
-        <h1 class="text-2xl font-bold text-slate-900">Export Budget for Financing Entities</h1>
-        <p class="text-sm text-slate-500">
-          Generate custom <strong>.xlsx</strong>, <strong>.csv</strong>, or <strong>.pdf</strong> declarations selecting whichever budget sections you need, optionally packaged into a structured <strong>.zip</strong> with all linked invoices and supporting documents.
+        <h1 class="text-2xl font-bold text-slate-900 dark:text-slate-100">{t().exports.heading}</h1>
+        <p class="text-sm text-slate-500 dark:text-slate-400">
+          {t().exports.subtitlePre} <strong>.xlsx</strong>, <strong>.csv</strong>, / <strong>.pdf</strong>{" "}
+          {t().exports.subtitleMid} <strong>.zip</strong> {t().exports.subtitlePost}
         </p>
       </div>
 
       <Show
         when={canExportBudget(app.user()?.role)}
         fallback={
-          <div class="rounded-2xl border border-rose-200 bg-rose-50 p-6 text-sm text-rose-800">
-            Access restricted: only Approvers and the Master account can export budget reports.
+          <div class="rounded-2xl border border-rose-200 dark:border-rose-900/70 bg-rose-50 dark:bg-rose-950/60 p-6 text-sm text-rose-800 dark:text-rose-200">
+            {t().exports.restrictedMsg}
           </div>
         }
       >
         <form onSubmit={handleExport} class="space-y-6">
           {/* Season & Format */}
-          <div class="rounded-2xl border border-slate-200 bg-white p-6 shadow-xs space-y-4">
-            <h2 class="text-base font-bold text-slate-900">1. Scope &amp; File Format</h2>
+          <div class="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 shadow-xs space-y-4">
+            <h2 class="text-base font-bold text-slate-900 dark:text-slate-100">{t().exports.step1Heading}</h2>
 
             <div class="grid sm:grid-cols-2 gap-4">
               <div>
-                <label class="block text-xs font-semibold uppercase tracking-wider text-slate-600 mb-1.5">
-                  Season Budget
+                <label class="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">
+                  {t().exports.seasonBudgetLabel}
                 </label>
                 <select
                   value={effectiveSeasonId()}
                   onChange={e => setSeasonId(e.currentTarget.value)}
-                  class="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm"
+                  class="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 focus:border-red-500 focus:outline-none"
                 >
                   <For each={app.seasons()}>
                     {s => (
                       <option value={s.id}>
-                        {s.name} ({s.status})
+                        {s.name} ({getSeasonStatusLabel(locale(), s.status)})
                       </option>
                     )}
                   </For>
@@ -157,41 +161,41 @@ export default function ExportsPage() {
               </div>
 
               <div>
-                <label class="block text-xs font-semibold uppercase tracking-wider text-slate-600 mb-1.5">
-                  Timeframe Rate Granularity
+                <label class="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">
+                  {t().exports.granularityLabel}
                 </label>
                 <select
                   value={ratePeriod()}
                   onChange={e => setRatePeriod(e.currentTarget.value as RatePeriod)}
-                  class="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm"
+                  class="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 focus:border-red-500 focus:outline-none"
                 >
                   <For each={RATE_PERIODS}>
-                    {p => <option value={p}>{p.toUpperCase()}</option>}
+                    {p => <option value={p}>{getRatePeriodLabel(locale(), p, "adj")}</option>}
                   </For>
                 </select>
               </div>
 
               <div>
-                <label class="block text-xs font-semibold uppercase tracking-wider text-slate-600 mb-1.5">
-                  From Date (optional)
+                <label class="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">
+                  {t().exports.fromDateOpt}
                 </label>
                 <input
                   type="date"
                   value={fromDate()}
                   onInput={e => setFromDate(e.currentTarget.value)}
-                  class="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                  class="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 focus:border-red-500 focus:outline-none"
                 />
               </div>
 
               <div>
-                <label class="block text-xs font-semibold uppercase tracking-wider text-slate-600 mb-1.5">
-                  To Date (optional)
+                <label class="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">
+                  {t().exports.toDateOpt}
                 </label>
                 <input
                   type="date"
                   value={toDate()}
                   onInput={e => setToDate(e.currentTarget.value)}
-                  class="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                  class="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 focus:border-red-500 focus:outline-none"
                 />
               </div>
             </div>
@@ -202,16 +206,16 @@ export default function ExportsPage() {
                 onClick={() => setFormat("xlsx")}
                 class={`rounded-xl border p-3.5 text-left transition-all cursor-pointer ${
                   format() === "xlsx"
-                    ? "border-slate-900 bg-slate-900 text-white"
-                    : "border-slate-200 bg-slate-50 text-slate-800 hover:bg-slate-100"
+                    ? "border-slate-900 bg-slate-900 text-white dark:border-red-500 dark:bg-red-950/50 dark:text-white"
+                    : "border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60 text-slate-800 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800"
                 }`}
               >
                 <div class="flex items-center gap-2 font-bold text-sm">
                   <FileSpreadsheet class="h-4 w-4" />
-                  Excel (.xlsx)
+                  {t().exports.xlsxTitle}
                 </div>
                 <div class="text-[11px] opacity-80 mt-1">
-                  Recommended: multi-sheet workbook with EUR formatting
+                  {t().exports.xlsxDesc}
                 </div>
               </button>
 
@@ -220,16 +224,16 @@ export default function ExportsPage() {
                 onClick={() => setFormat("pdf")}
                 class={`rounded-xl border p-3.5 text-left transition-all cursor-pointer ${
                   format() === "pdf"
-                    ? "border-slate-900 bg-slate-900 text-white"
-                    : "border-slate-200 bg-slate-50 text-slate-800 hover:bg-slate-100"
+                    ? "border-slate-900 bg-slate-900 text-white dark:border-red-500 dark:bg-red-950/50 dark:text-white"
+                    : "border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60 text-slate-800 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800"
                 }`}
               >
                 <div class="flex items-center gap-2 font-bold text-sm">
                   <Download class="h-4 w-4" />
-                  PDF Declaration
+                  {t().exports.pdfTitle}
                 </div>
                 <div class="text-[11px] opacity-80 mt-1">
-                  Print-ready formal financial summary tables
+                  {t().exports.pdfDesc}
                 </div>
               </button>
 
@@ -238,30 +242,30 @@ export default function ExportsPage() {
                 onClick={() => setFormat("csv")}
                 class={`rounded-xl border p-3.5 text-left transition-all cursor-pointer ${
                   format() === "csv"
-                    ? "border-slate-900 bg-slate-900 text-white"
-                    : "border-slate-200 bg-slate-50 text-slate-800 hover:bg-slate-100"
+                    ? "border-slate-900 bg-slate-900 text-white dark:border-red-500 dark:bg-red-950/50 dark:text-white"
+                    : "border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60 text-slate-800 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800"
                 }`}
               >
                 <div class="flex items-center gap-2 font-bold text-sm">
                   <Archive class="h-4 w-4" />
-                  CSV (UTF-8 BOM)
+                  {t().exports.csvTitle}
                 </div>
                 <div class="text-[11px] opacity-80 mt-1">
-                  Raw tabular export compatible with French Excel
+                  {t().exports.csvDesc}
                 </div>
               </button>
             </div>
 
             <Show when={format() === "csv"}>
-              <div class="flex items-center gap-4 text-xs text-slate-700 pt-1">
-                <span class="font-semibold">CSV Delimiter:</span>
+              <div class="flex items-center gap-4 text-xs text-slate-700 dark:text-slate-300 pt-1">
+                <span class="font-semibold">{t().exports.csvDelimiterLabel}</span>
                 <label class="inline-flex items-center gap-1.5 cursor-pointer">
                   <input
                     type="radio"
                     checked={csvDelimiter() === ";"}
                     onChange={() => setCsvDelimiter(";")}
                   />
-                  Semicolon (<code>;</code> — French Excel)
+                  {t().exports.csvSemicolonName} (<code>;</code> {t().exports.csvSemicolonLabel})
                 </label>
                 <label class="inline-flex items-center gap-1.5 cursor-pointer">
                   <input
@@ -269,31 +273,31 @@ export default function ExportsPage() {
                     checked={csvDelimiter() === ","}
                     onChange={() => setCsvDelimiter(",")}
                   />
-                  Comma (<code>,</code> — Standard)
+                  {t().exports.csvCommaName} (<code>,</code> {t().exports.csvCommaLabel})
                 </label>
               </div>
             </Show>
           </div>
 
           {/* Section Checkboxes */}
-          <div class="rounded-2xl border border-slate-200 bg-white p-6 shadow-xs space-y-4">
+          <div class="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 shadow-xs space-y-4">
             <div class="flex items-center justify-between">
-              <h2 class="text-base font-bold text-slate-900">2. Select Budget Sections to Include</h2>
+              <h2 class="text-base font-bold text-slate-900 dark:text-slate-100">{t().exports.step2Heading}</h2>
               <div class="flex gap-2 text-xs">
                 <button
                   type="button"
                   onClick={() => setSelectedSections(BUDGET_SECTIONS.map(s => s.id))}
-                  class="font-semibold text-red-600 hover:underline cursor-pointer"
+                  class="font-semibold text-red-600 dark:text-red-400 hover:underline cursor-pointer"
                 >
-                  Select All
+                  {t().common.selectAll}
                 </button>
-                <span class="text-slate-300">|</span>
+                <span class="text-slate-300 dark:text-slate-600">|</span>
                 <button
                   type="button"
                   onClick={() => setSelectedSections([])}
-                  class="font-semibold text-slate-500 hover:underline cursor-pointer"
+                  class="font-semibold text-slate-500 dark:text-slate-400 hover:underline cursor-pointer"
                 >
-                  Clear
+                  {t().common.clear}
                 </button>
               </div>
             </div>
@@ -304,8 +308,8 @@ export default function ExportsPage() {
                   <label
                     class={`flex items-center gap-2.5 rounded-xl border p-3 text-xs font-medium cursor-pointer transition-colors ${
                       selectedSections().includes(sec.id)
-                        ? "border-red-500 bg-red-50/50 text-slate-900"
-                        : "border-slate-200 bg-slate-50 text-slate-600"
+                        ? "border-red-500 bg-red-50/50 dark:bg-red-950/40 text-slate-900 dark:text-slate-100"
+                        : "border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60 text-slate-600 dark:text-slate-400"
                     }`}
                   >
                     <input
@@ -314,7 +318,7 @@ export default function ExportsPage() {
                       onChange={() => toggleSection(sec.id)}
                       class="h-4 w-4 accent-red-600"
                     />
-                    <span>{sec.label}</span>
+                    <span>{getBudgetSectionLabel(locale(), sec.id)}</span>
                   </label>
                 )}
               </For>
@@ -322,7 +326,7 @@ export default function ExportsPage() {
           </div>
 
           {/* Structured ZIP Bundle Option */}
-          <div class="rounded-2xl border border-slate-200 bg-white p-6 shadow-xs">
+          <div class="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 shadow-xs">
             <label class="flex items-start gap-3 cursor-pointer">
               <input
                 type="checkbox"
@@ -331,28 +335,29 @@ export default function ExportsPage() {
                 class="mt-1 h-4 w-4 accent-red-600"
               />
               <div>
-                <div class="flex items-center gap-2 font-bold text-sm text-slate-900">
-                  <FolderArchive class="h-4 w-4 text-red-600" />
-                  Create a Structured .ZIP Bundle with Invoices &amp; Supporting Documents
+                <div class="flex items-center gap-2 font-bold text-sm text-slate-900 dark:text-slate-100">
+                  <FolderArchive class="h-4 w-4 text-red-600 dark:text-red-400" />
+                  {t().exports.zipTitle}
                 </div>
-                <p class="text-xs text-slate-500 mt-1">
-                  Packages your exported report alongside organized folders (
+                <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                  {t().exports.zipDescPrefix}
                   <code>documents/spendings/&lt;DEPT&gt;/&lt;ID&gt;/</code>,{" "}
                   <code>documents/provisional_spendings/...</code>,{" "}
-                  <code>documents/entries/&lt;CATEGORY&gt;/&lt;ID&gt;/</code>) containing every linked invoice, fee receipt, and supporting document.
+                  <code>documents/entries/&lt;CATEGORY&gt;/&lt;ID&gt;/</code>
+                  {t().exports.zipDescSuffix}
                 </p>
               </div>
             </label>
           </div>
 
           <Show when={error()}>
-            <div class="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            <div class="rounded-xl border border-red-200 dark:border-red-900/70 bg-red-50 dark:bg-red-950/60 px-4 py-3 text-sm text-red-700 dark:text-red-300">
               {error()}
             </div>
           </Show>
 
           <Show when={exportedMessage()}>
-            <div class="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+            <div class="rounded-xl border border-emerald-200 dark:border-emerald-900/70 bg-emerald-50 dark:bg-emerald-950/60 px-4 py-3 text-sm text-emerald-800 dark:text-emerald-300">
               {exportedMessage()}
             </div>
           </Show>
@@ -365,8 +370,10 @@ export default function ExportsPage() {
             >
               <Download class="h-4 w-4" />
               {downloading()
-                ? "Generating Export..."
-                : `Download ${includeZip() ? "Structured ZIP Bundle" : format().toUpperCase()}`}
+                ? t().exports.generatingBtn
+                : t().exports.downloadBtn(
+                    includeZip() ? t().exports.downloadZipLabel : format().toUpperCase()
+                  )}
             </button>
           </div>
         </form>

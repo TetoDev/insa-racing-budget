@@ -586,6 +586,23 @@ export function computeBudgetAnalytics(params: {
   };
 }
 
+function parseSearchTerms(rawQuery: string): string[] {
+  const normalized = rawQuery.trim().toLowerCase();
+  return normalized ? normalized.split(/\s+/).filter(Boolean) : [];
+}
+
+function matchesSearchTerms(
+  fields: readonly (string | null | undefined)[],
+  terms: readonly string[]
+): boolean {
+  if (terms.length === 0) return true;
+  const haystack = fields
+    .map(f => f ?? "")
+    .join(" ")
+    .toLowerCase();
+  return terms.every(term => haystack.includes(term));
+}
+
 export interface SearchableSpendingLike {
   requestCode: string;
   title: string;
@@ -606,24 +623,23 @@ export function filterBudgetItemsByQuery<T extends SearchableSpendingLike>(
 ): T[] {
   const deptFiltered =
     departmentFilter === "all" ? items : items.filter(item => item.department === departmentFilter);
-  const normalized = rawQuery.trim().toLowerCase();
-  if (!normalized) return [...deptFiltered];
-  const terms = normalized.split(/\s+/).filter(Boolean);
+  const terms = parseSearchTerms(rawQuery);
+  if (terms.length === 0) return [...deptFiltered];
   return deptFiltered.filter(item => {
     const deptLabel = item.department ? DEPARTMENT_MAP[item.department]?.label ?? item.department : "";
     const deptCode = item.department ? DEPARTMENT_MAP[item.department]?.code ?? "" : "";
-    const haystack = [
-      item.requestCode,
-      item.title,
-      item.chosenOptionLabel,
-      item.carSystem ?? "",
-      deptLabel,
-      deptCode,
-      item.creatorName ?? ""
-    ]
-      .join(" ")
-      .toLowerCase();
-    return terms.every(term => haystack.includes(term));
+    return matchesSearchTerms(
+      [
+        item.requestCode,
+        item.title,
+        item.chosenOptionLabel,
+        item.carSystem,
+        deptLabel,
+        deptCode,
+        item.creatorName
+      ],
+      terms
+    );
   });
 }
 
@@ -654,16 +670,92 @@ export function filterEntriesByQuery<T extends SearchableEntryLike>(
     if (st !== "all" && e.status !== st) return false;
     return true;
   });
-  const normalized = params.query.trim().toLowerCase();
-  if (!normalized) return narrowed;
-  const terms = normalized.split(/\s+/).filter(Boolean);
+  const terms = parseSearchTerms(params.query);
+  if (terms.length === 0) return narrowed;
   return narrowed.filter(e => {
     const catLabel = ENTRY_CATEGORY_MAP[e.category]?.label ?? e.category;
-    const haystack = [e.entryCode, e.title, e.comment, catLabel, e.status, e.creatorName ?? ""]
-      .join(" ")
-      .toLowerCase();
-    return terms.every(t => haystack.includes(t));
+    return matchesSearchTerms(
+      [e.entryCode, e.title, e.comment, catLabel, e.status, e.creatorName],
+      terms
+    );
   });
+}
+
+const ARCHIVED_REQUEST_STATUSES: ReadonlySet<RequestStatus> = new Set([
+  "denied_archived",
+  "withdrawn_archived",
+  "order_cancelled_archived"
+]);
+
+export interface SearchableRequestLike {
+  requestCode: string;
+  title: string;
+  carSystem?: string | null;
+  explanation?: string | null;
+  department: DepartmentId;
+  status: RequestStatus;
+  creatorName?: string;
+}
+
+/**
+ * Filters purchase requests client-side by status tab, department, and multi-term text query
+ * without triggering server Suspense reloads while typing.
+ */
+export function filterRequestsByQuery<T extends SearchableRequestLike>(
+  requests: readonly T[],
+  params: {
+    query: string;
+    status?: RequestStatus | "all" | "archived";
+    department?: DepartmentId | "all";
+  }
+): T[] {
+  const statusFilter = params.status ?? "all";
+  const deptFilter = params.department ?? "all";
+  const narrowed = requests.filter(r => {
+    if (deptFilter !== "all" && r.department !== deptFilter) return false;
+    if (statusFilter === "archived") return ARCHIVED_REQUEST_STATUSES.has(r.status);
+    if (statusFilter !== "all" && r.status !== statusFilter) return false;
+    return true;
+  });
+  const terms = parseSearchTerms(params.query);
+  if (terms.length === 0) return narrowed;
+  return narrowed.filter(r => {
+    const deptLabel = DEPARTMENT_MAP[r.department]?.label ?? r.department;
+    const deptCode = DEPARTMENT_MAP[r.department]?.code ?? "";
+    return matchesSearchTerms(
+      [
+        r.requestCode,
+        r.title,
+        r.carSystem,
+        r.explanation,
+        deptLabel,
+        deptCode,
+        r.creatorName
+      ],
+      terms
+    );
+  });
+}
+
+export interface SearchableAuditLogLike {
+  action: string;
+  targetCode: string | null;
+  summary: string;
+  actorLabel: string;
+}
+
+/**
+ * Filters audit log rows client-side for immediate keystroke feedback.
+ */
+export function filterAuditLogsByQuery<T extends SearchableAuditLogLike>(
+  logs: readonly T[],
+  rawQuery: string
+): T[] {
+  const terms = parseSearchTerms(rawQuery);
+  if (terms.length === 0) return [...logs];
+  return logs.filter(log =>
+    matchesSearchTerms([log.action, log.targetCode, log.summary, log.actorLabel], terms)
+  );
 }
 
 export type DatePresetId = "this_month" | "last_30" | "last_90" | "season";

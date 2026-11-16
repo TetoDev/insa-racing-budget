@@ -1,8 +1,10 @@
 import { AlertTriangle } from "lucide-solid";
 import { Show } from "solid-js";
 import { getBudgetUtilizationStatus } from "~/lib/budget-analytics";
-import { DEPARTMENT_MAP, type DepartmentId } from "~/lib/constants";
+import type { DepartmentId } from "~/lib/constants";
 import { formatEur } from "~/lib/format";
+import { getDepartmentLabel } from "~/lib/i18n";
+import { useI18n } from "./AppContext";
 
 /**
  * Purely informational warning shown to approvers during Stage 1 / Stage 2 review
@@ -14,7 +16,8 @@ export function DepartmentBudgetWarning(props: {
   spentAndCommittedCents: number;
   additionalEstimateCents?: number;
 }) {
-  const deptLabel = () => DEPARTMENT_MAP[props.department]?.label ?? props.department;
+  const { locale, t } = useI18n();
+  const deptLabel = () => getDepartmentLabel(locale(), props.department);
   const projectedWithAdditional = () =>
     props.spentAndCommittedCents + (props.additionalEstimateCents ?? 0);
   const pct = () =>
@@ -28,21 +31,27 @@ export function DepartmentBudgetWarning(props: {
       <div
         class={`rounded-xl border px-3.5 py-2.5 text-xs flex items-start gap-2.5 ${
           level() === "over"
-            ? "border-rose-300 bg-rose-50 text-rose-900"
-            : "border-amber-300 bg-amber-50 text-amber-900"
+            ? "border-rose-300 bg-rose-50 text-rose-900 dark:border-rose-800/80 dark:bg-rose-950/60 dark:text-rose-200"
+            : "border-amber-300 bg-amber-50 text-amber-900 dark:border-amber-800/80 dark:bg-amber-950/60 dark:text-amber-200"
         }`}
       >
         <AlertTriangle class="h-4 w-4 shrink-0 mt-0.5" />
         <div class="space-y-0.5">
           <div class="font-bold">
-            Department Budget Warning (Advisory Only) — {deptLabel()} at {pct()}%
+            {t().components.deptWarningTitle(deptLabel(), pct()!)}
           </div>
           <div>
-            Allocated envelope: <strong>{formatEur(props.allocatedCents!)}</strong> · Current
-            committed + invoiced: <strong>{formatEur(props.spentAndCommittedCents)}</strong>
+            {t().components.deptWarningAllocated}{" "}
+            <strong>{formatEur(props.allocatedCents!, locale())}</strong> ·{" "}
+            {t().components.deptWarningCommitted}{" "}
+            <strong>{formatEur(props.spentAndCommittedCents, locale())}</strong>
             <Show when={(props.additionalEstimateCents ?? 0) > 0}>
-              {" "}· Adding selected/estimated option (<strong>+{formatEur(props.additionalEstimateCents!)}</strong>)
-              brings total to <strong>{formatEur(projectedWithAdditional())}</strong>.
+              {" "}
+              ·{" "}
+              {t().components.deptWarningAdding(
+                formatEur(props.additionalEstimateCents!, locale()),
+                formatEur(projectedWithAdditional(), locale())
+              )}
             </Show>
           </div>
         </div>

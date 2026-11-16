@@ -98,7 +98,8 @@ export const exportConfigSchema = z.object({
   sections: z.array(z.enum(budgetSectionIds as [typeof BUDGET_SECTIONS[number]["id"], ...typeof BUDGET_SECTIONS[number]["id"][]])).min(1),
   fromDate: z.string().optional(),
   toDate: z.string().optional(),
-  ratePeriod: z.enum(RATE_PERIODS).default("month")
+  ratePeriod: z.enum(RATE_PERIODS).default("month"),
+  locale: z.enum(["en", "fr"]).optional()
 });
 
 export const entryCategorySchema = z.enum(

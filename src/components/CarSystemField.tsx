@@ -1,5 +1,6 @@
 import { For } from "solid-js";
 import { CAR_SYSTEM_SUGGESTIONS } from "~/lib/constants";
+import { useI18n } from "./AppContext";
 
 export function CarSystemField(props: {
   value: string;
@@ -9,14 +10,15 @@ export function CarSystemField(props: {
   placeholder?: string;
   compact?: boolean;
 }) {
+  const { t } = useI18n();
   return (
     <div>
       <label
-        class={`block text-xs font-semibold text-slate-600 ${
+        class={`block text-xs font-semibold text-slate-600 dark:text-slate-400 ${
           props.compact ? "mb-1" : "uppercase tracking-wider mb-1.5"
         }`}
       >
-        {props.label ?? "Car System / Part of Car"}
+        {props.label ?? t().components.carSystemLabel}
       </label>
       <input
         type="text"
@@ -26,11 +28,8 @@ export function CarSystemField(props: {
         list={props.listId}
         value={props.value}
         onInput={e => props.onInput(e.currentTarget.value)}
-        placeholder={
-          props.placeholder ??
-          "e.g. Aerodynamics / Rear Wing, HV Accumulator, Upright..."
-        }
-        class={`w-full rounded-lg border border-slate-200 bg-white text-sm focus:border-red-500 focus:outline-none ${
+        placeholder={props.placeholder ?? t().components.carSystemPlaceholder}
+        class={`w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 text-sm text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:border-red-500 focus:outline-none ${
           props.compact ? "px-3 py-2" : "px-3.5 py-2"
         }`}
       />

@@ -15,9 +15,7 @@ import {
   DEPARTMENTS,
   ENTRY_CATEGORIES,
   ENTRY_STATUSES,
-  ENTRY_STATUS_LABELS,
   REQUEST_STATUSES,
-  REQUEST_STATUS_LABELS,
   type DepartmentId,
   type EntryCategory,
   type EntryStatus,
@@ -31,7 +29,17 @@ import {
   toDateTimeLocalInput,
   toIsoDateInput
 } from "~/lib/format";
+import {
+  getAttachmentKindLabel,
+  getDepartmentLabel,
+  getEntryCategoryLabel,
+  getEntryStatusLabel,
+  getRequestStatusLabel,
+  getRoleLabel,
+  getTimelineEventLabel
+} from "~/lib/i18n";
 import { queryEntryItemLog } from "~/server/rpc";
+import { useI18n } from "./AppContext";
 import { EntryStatusBadge, RoleBadge, UserAvatar } from "./Badges";
 
 export interface MasterOptionItem {
@@ -111,6 +119,7 @@ export function MasterEditRequestModal(props: {
   onClose: () => void;
   onSuccess: (nextRequestCode: string) => Promise<void>;
 }) {
+  const { locale, t } = useI18n();
   const [requestCode, setRequestCode] = createSignal("");
   const [seasonId, setSeasonId] = createSignal("");
   const [department, setDepartment] = createSignal<DepartmentId>("powertrain");
@@ -292,12 +301,12 @@ export function MasterEditRequestModal(props: {
         body: fd
       });
       const json = await res.json();
-      if (!res.ok) throw new Error(json.error || "Failed to save Master edits.");
+      if (!res.ok) throw new Error(json.error || t().masterModals.failedMasterRequestErr);
       const nextCode = typeof json.requestCode === "string" ? json.requestCode : requestCode();
       props.onClose();
       await props.onSuccess(nextCode);
     } catch (e2) {
-      setErr(e2 instanceof Error ? e2.message : "Failed to apply Master edits.");
+      setErr(e2 instanceof Error ? e2.message : t().masterModals.failedMasterRequestErr);
     } finally {
       setBusy(false);
     }
@@ -306,28 +315,28 @@ export function MasterEditRequestModal(props: {
   return (
     <Show when={props.open && props.request}>
       {req => (
-        <div class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 p-4 overflow-y-auto">
+        <div class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 dark:bg-black/80 p-4 overflow-y-auto">
           <form
             onSubmit={submit}
-            class="w-full max-w-4xl rounded-2xl bg-white p-6 shadow-2xl space-y-5 my-6 max-h-[92vh] overflow-y-auto"
+            class="w-full max-w-4xl rounded-2xl bg-white dark:bg-slate-900 dark:border dark:border-slate-800 p-6 shadow-2xl space-y-5 my-6 max-h-[92vh] overflow-y-auto"
           >
-            <div class="flex items-start justify-between gap-3 border-b border-slate-100 pb-3">
+            <div class="flex items-start justify-between gap-3 border-b border-slate-100 dark:border-slate-800 pb-3">
               <div>
-                <div class="inline-flex items-center gap-1.5 rounded-full bg-red-50 px-2.5 py-0.5 text-[11px] font-bold uppercase tracking-wider text-red-700 mb-1">
+                <div class="inline-flex items-center gap-1.5 rounded-full bg-red-50 dark:bg-red-950/60 dark:border dark:border-red-900/60 px-2.5 py-0.5 text-[11px] font-bold uppercase tracking-wider text-red-700 dark:text-red-300 mb-1">
                   <ShieldAlert class="h-3.5 w-3.5" />
-                  Master Unrestricted Edit
+                  {t().masterModals.badgeUnrestricted}
                 </div>
-                <h3 class="text-lg font-extrabold text-slate-900">
-                  Edit All Fields — {req().requestCode}
+                <h3 class="text-lg font-extrabold text-slate-900 dark:text-slate-100">
+                  {t().masterModals.editRequestTitle(req().requestCode)}
                 </h3>
-                <p class="text-xs text-slate-500">
-                  Every modified field, option, or attachment will be recorded in the item timeline and audit log.
+                <p class="text-xs text-slate-500 dark:text-slate-400">
+                  {t().masterModals.editRequestSubtitle}
                 </p>
               </div>
               <button
                 type="button"
                 onClick={props.onClose}
-                class="text-slate-400 hover:text-slate-700 cursor-pointer"
+                class="text-slate-400 hover:text-slate-700 dark:text-slate-500 dark:hover:text-slate-200 cursor-pointer"
               >
                 <X class="h-5 w-5" />
               </button>
@@ -336,69 +345,79 @@ export function MasterEditRequestModal(props: {
             {/* A. Identity, Season, Department, Status */}
             <div class="grid sm:grid-cols-3 gap-3">
               <div>
-                <label class="block text-xs font-semibold text-slate-600 mb-1">Request ID / Code</label>
+                <label class="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">
+                  {t().masterModals.requestIdCode}
+                </label>
                 <input
                   type="text"
                   required
                   value={requestCode()}
                   onInput={e => setRequestCode(e.currentTarget.value)}
-                  class="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm font-mono uppercase"
+                  class="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100 px-3 py-2 text-sm font-mono uppercase"
                 />
               </div>
               <div>
-                <label class="block text-xs font-semibold text-slate-600 mb-1">Season</label>
+                <label class="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">
+                  {t().common.season}
+                </label>
                 <select
                   value={seasonId()}
                   onChange={e => setSeasonId(e.currentTarget.value)}
-                  class="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm"
+                  class="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100 px-3 py-2 text-sm"
                 >
                   <For each={props.seasons}>
                     {s => (
                       <option value={s.id}>
-                        {s.name} ({s.yearCode}){s.status === "archived" ? " [Archived]" : ""}
+                        {s.name} ({s.yearCode}){s.status === "archived" ? t().masterModals.archivedSuffix : ""}
                       </option>
                     )}
                   </For>
                 </select>
               </div>
               <div>
-                <label class="block text-xs font-semibold text-slate-600 mb-1">Department</label>
+                <label class="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">
+                  {t().common.department}
+                </label>
                 <select
                   value={department()}
                   onChange={e => setDepartment(e.currentTarget.value as DepartmentId)}
-                  class="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm"
+                  class="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100 px-3 py-2 text-sm"
                 >
                   <For each={DEPARTMENTS}>
                     {d => (
                       <option value={d.id}>
-                        {d.label} ({d.code})
+                        {getDepartmentLabel(locale(), d.id)} ({d.code})
                       </option>
                     )}
                   </For>
                 </select>
               </div>
               <div>
-                <label class="block text-xs font-semibold text-slate-600 mb-1">Status</label>
+                <label class="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">
+                  {t().common.status}
+                </label>
                 <select
                   value={status()}
                   onChange={e => setStatus(e.currentTarget.value as RequestStatus)}
-                  class="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm"
+                  class="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100 px-3 py-2 text-sm"
                 >
                   <For each={REQUEST_STATUSES}>
-                    {st => <option value={st}>{REQUEST_STATUS_LABELS[st]}</option>}
+                    {st => <option value={st}>{getRequestStatusLabel(locale(), st)}</option>}
                   </For>
                 </select>
               </div>
               <div>
-                <label class="block text-xs font-semibold text-slate-600 mb-1">Car System / Part</label>
+                <label class="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">
+                  {t().masterModals.carSystemOptLabel}
+                </label>
                 <input
                   type="text"
                   maxLength={120}
                   list="master-car-system-list"
                   value={carSystem()}
                   onInput={e => setCarSystem(e.currentTarget.value)}
-                  placeholder="Optional or pick a system..."
-                  class="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                  placeholder={t().masterModals.carSystemOptPlaceholder}
+                  class="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100 dark:placeholder:text-slate-500 px-3 py-2 text-sm"
                 />
                 <datalist id="master-car-system-list">
                   <For each={CAR_SYSTEM_SUGGESTIONS}>
@@ -407,14 +426,14 @@ export function MasterEditRequestModal(props: {
                 </datalist>
               </div>
               <div class="flex items-end pb-2">
-                <label class="inline-flex items-center gap-2 text-xs font-semibold text-slate-700 cursor-pointer">
+                <label class="inline-flex items-center gap-2 text-xs font-semibold text-slate-700 dark:text-slate-300 cursor-pointer">
                   <input
                     type="checkbox"
                     checked={hasApproverResponse()}
                     onChange={e => setHasApproverResponse(e.currentTarget.checked)}
                     class="h-4 w-4 accent-red-600"
                   />
-                  <span>Has Approver Response</span>
+                  <span>{t().masterModals.hasApproverResponse}</span>
                 </label>
               </div>
             </div>
@@ -422,66 +441,76 @@ export function MasterEditRequestModal(props: {
             {/* B. Title & Explanation */}
             <div class="space-y-3">
               <div>
-                <label class="block text-xs font-semibold text-slate-600 mb-1">Title</label>
+                <label class="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">
+                  {t().common.title}
+                </label>
                 <input
                   type="text"
                   required
                   value={title()}
                   onInput={e => setTitle(e.currentTarget.value)}
-                  class="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                  class="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100 px-3 py-2 text-sm"
                 />
               </div>
               <div>
-                <label class="block text-xs font-semibold text-slate-600 mb-1">Explanation</label>
+                <label class="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">
+                  {t().common.explanation}
+                </label>
                 <textarea
                   rows={3}
                   value={explanation()}
                   onInput={e => setExplanation(e.currentTarget.value)}
-                  class="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                  class="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100 px-3 py-2 text-sm"
                 />
               </div>
             </div>
 
             {/* C. Ownership & Lifecycle Timestamps */}
-            <div class="rounded-xl border border-slate-200 bg-slate-50/70 p-4 space-y-3">
-              <h4 class="text-xs font-bold uppercase tracking-wider text-slate-500">
-                Ownership &amp; Lifecycle Timestamps
+            <div class="rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/50 p-4 space-y-3">
+              <h4 class="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                {t().masterModals.ownershipTimestampsHeading}
               </h4>
               <div class="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
                 <div>
-                  <label class="block text-xs font-semibold text-slate-600 mb-1">Creator</label>
+                  <label class="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">
+                    {t().common.creator}
+                  </label>
                   <select
                     value={creatorId()}
                     onChange={e => setCreatorId(e.currentTarget.value)}
-                    class="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-xs"
+                    class="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100 px-2.5 py-2 text-xs"
                   >
                     <For each={props.users}>
                       {u => (
                         <option value={u.id}>
-                          {u.fullName} ({u.role})
+                          {u.fullName} ({getRoleLabel(locale(), u.role as UserRole)})
                         </option>
                       )}
                     </For>
                   </select>
                 </div>
                 <div>
-                  <label class="block text-xs font-semibold text-slate-600 mb-1">Created At</label>
+                  <label class="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">
+                    {t().common.createdAt}
+                  </label>
                   <input
                     type="datetime-local"
                     required
                     value={createdAt()}
                     onInput={e => setCreatedAt(e.currentTarget.value)}
-                    class="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs"
+                    class="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100 px-2.5 py-1.5 text-xs"
                   />
                 </div>
                 <div>
-                  <label class="block text-xs font-semibold text-slate-600 mb-1">Ordered By</label>
+                  <label class="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">
+                    {t().masterModals.orderedBy}
+                  </label>
                   <select
                     value={orderedById()}
                     onChange={e => setOrderedById(e.currentTarget.value)}
-                    class="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-xs"
+                    class="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100 px-2.5 py-2 text-xs"
                   >
-                    <option value="">(None)</option>
+                    <option value="">{t().common.none}</option>
                     <For each={props.users}>
                       {u => <option value={u.id}>{u.fullName}</option>}
                     </For>
@@ -489,14 +518,16 @@ export function MasterEditRequestModal(props: {
                 </div>
                 <div>
                   <div class="flex items-center justify-between mb-1">
-                    <label class="text-xs font-semibold text-slate-600">Ordered At</label>
+                    <label class="text-xs font-semibold text-slate-600 dark:text-slate-300">
+                      {t().masterModals.orderedAt}
+                    </label>
                     <Show when={orderedAt()}>
                       <button
                         type="button"
                         onClick={() => setOrderedAt("")}
-                        class="text-[11px] text-rose-600 hover:underline cursor-pointer"
+                        class="text-[11px] text-rose-600 dark:text-rose-400 hover:underline cursor-pointer"
                       >
-                        Clear
+                        {t().common.clear}
                       </button>
                     </Show>
                   </div>
@@ -504,17 +535,19 @@ export function MasterEditRequestModal(props: {
                     type="datetime-local"
                     value={orderedAt()}
                     onInput={e => setOrderedAt(e.currentTarget.value)}
-                    class="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs"
+                    class="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100 px-2.5 py-1.5 text-xs"
                   />
                 </div>
                 <div>
-                  <label class="block text-xs font-semibold text-slate-600 mb-1">Invoiced By</label>
+                  <label class="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">
+                    {t().masterModals.invoicedBy}
+                  </label>
                   <select
                     value={invoicedById()}
                     onChange={e => setInvoicedById(e.currentTarget.value)}
-                    class="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-xs"
+                    class="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100 px-2.5 py-2 text-xs"
                   >
-                    <option value="">(None)</option>
+                    <option value="">{t().common.none}</option>
                     <For each={props.users}>
                       {u => <option value={u.id}>{u.fullName}</option>}
                     </For>
@@ -522,14 +555,16 @@ export function MasterEditRequestModal(props: {
                 </div>
                 <div>
                   <div class="flex items-center justify-between mb-1">
-                    <label class="text-xs font-semibold text-slate-600">Invoiced At</label>
+                    <label class="text-xs font-semibold text-slate-600 dark:text-slate-300">
+                      {t().masterModals.invoicedAt}
+                    </label>
                     <Show when={invoicedAt()}>
                       <button
                         type="button"
                         onClick={() => setInvoicedAt("")}
-                        class="text-[11px] text-rose-600 hover:underline cursor-pointer"
+                        class="text-[11px] text-rose-600 dark:text-rose-400 hover:underline cursor-pointer"
                       >
-                        Clear
+                        {t().common.clear}
                       </button>
                     </Show>
                   </div>
@@ -537,19 +572,21 @@ export function MasterEditRequestModal(props: {
                     type="datetime-local"
                     value={invoicedAt()}
                     onInput={e => setInvoicedAt(e.currentTarget.value)}
-                    class="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs"
+                    class="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100 px-2.5 py-1.5 text-xs"
                   />
                 </div>
                 <div>
                   <div class="flex items-center justify-between mb-1">
-                    <label class="text-xs font-semibold text-slate-600">Archived At</label>
+                    <label class="text-xs font-semibold text-slate-600 dark:text-slate-300">
+                      {t().masterModals.archivedAt}
+                    </label>
                     <Show when={archivedAt()}>
                       <button
                         type="button"
                         onClick={() => setArchivedAt("")}
-                        class="text-[11px] text-rose-600 hover:underline cursor-pointer"
+                        class="text-[11px] text-rose-600 dark:text-rose-400 hover:underline cursor-pointer"
                       >
-                        Clear
+                        {t().common.clear}
                       </button>
                     </Show>
                   </div>
@@ -557,32 +594,33 @@ export function MasterEditRequestModal(props: {
                     type="datetime-local"
                     value={archivedAt()}
                     onInput={e => setArchivedAt(e.currentTarget.value)}
-                    class="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs"
+                    class="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100 px-2.5 py-1.5 text-xs"
                   />
                 </div>
               </div>
             </div>
 
             {/* D. Amounts & Selected Option */}
-            <div class="rounded-xl border border-slate-200 bg-slate-50/70 p-4 space-y-3">
-              <h4 class="text-xs font-bold uppercase tracking-wider text-slate-500">
-                Selected Option &amp; Financials (EUR)
+            <div class="rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/50 p-4 space-y-3">
+              <h4 class="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                {t().masterModals.selectedOptionFinancialsHeading}
               </h4>
               <div class="grid sm:grid-cols-2 lg:grid-cols-5 gap-3">
                 <div class="lg:col-span-2">
-                  <label class="block text-xs font-semibold text-slate-600 mb-1">
-                    Selected Buying Option
+                  <label class="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">
+                    {t().masterModals.selectedBuyingOption}
                   </label>
                   <select
                     value={selectedOptionClientKey()}
                     onChange={e => setSelectedOptionClientKey(e.currentTarget.value)}
-                    class="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-xs"
+                    class="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100 px-2.5 py-2 text-xs"
                   >
-                    <option value="">(None selected)</option>
+                    <option value="">{t().common.noneSelected}</option>
                     <For each={options()}>
                       {(opt, idx) => (
                         <option value={opt.clientKey}>
-                          Option #{idx() + 1}: {opt.label || "Untitled"} ({opt.priceEur || "0"} €)
+                          {t().masterModals.optionNumber(idx() + 1)}: {opt.label || t().common.untitled} (
+                          {opt.priceEur || "0"} €)
                         </option>
                       )}
                     </For>
@@ -590,14 +628,16 @@ export function MasterEditRequestModal(props: {
                 </div>
                 <div>
                   <div class="flex items-center justify-between mb-1">
-                    <label class="text-xs font-semibold text-slate-600">Base Price Override</label>
+                    <label class="text-xs font-semibold text-slate-600 dark:text-slate-300">
+                      {t().masterModals.basePriceOverride}
+                    </label>
                     <Show when={selectedOptionClientKey()}>
                       <button
                         type="button"
                         onClick={syncPriceFromSelectedOption}
-                        class="text-[10px] font-semibold text-red-600 hover:underline cursor-pointer"
+                        class="text-[10px] font-semibold text-red-600 dark:text-red-400 hover:underline cursor-pointer"
                       >
-                        Sync
+                        {t().common.sync}
                       </button>
                     </Show>
                   </div>
@@ -605,41 +645,45 @@ export function MasterEditRequestModal(props: {
                     type="text"
                     value={selectedOptionPriceEur()}
                     onInput={e => setSelectedOptionPriceEur(e.currentTarget.value)}
-                    placeholder="Blank = None"
-                    class="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-sm tabular-nums"
+                    placeholder={t().common.blankEqualsNone}
+                    class="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100 dark:placeholder:text-slate-500 px-2.5 py-1.5 text-sm tabular-nums"
                   />
                 </div>
                 <div>
-                  <label class="block text-xs font-semibold text-slate-600 mb-1">Shipping (EUR)</label>
+                  <label class="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">
+                    {t().masterModals.shippingEur}
+                  </label>
                   <input
                     type="text"
                     required
                     value={shippingEur()}
                     onInput={e => setShippingEur(e.currentTarget.value)}
-                    class="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-sm tabular-nums"
+                    class="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100 px-2.5 py-1.5 text-sm tabular-nums"
                   />
                 </div>
                 <div>
-                  <label class="block text-xs font-semibold text-slate-600 mb-1">Import Fee (EUR)</label>
+                  <label class="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">
+                    {t().masterModals.importFeeEur}
+                  </label>
                   <input
                     type="text"
                     required
                     value={importFeeEur()}
                     onInput={e => setImportFeeEur(e.currentTarget.value)}
-                    class="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-sm tabular-nums"
+                    class="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100 px-2.5 py-1.5 text-sm tabular-nums"
                   />
                 </div>
               </div>
               <div class="max-w-xs">
-                <label class="block text-xs font-semibold text-slate-600 mb-1">
-                  Final Invoiced Amount (EUR, blank = None)
+                <label class="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">
+                  {t().masterModals.finalInvoicedAmountBlank}
                 </label>
                 <input
                   type="text"
                   value={finalAmountEur()}
                   onInput={e => setFinalAmountEur(e.currentTarget.value)}
-                  placeholder="Blank = None"
-                  class="w-full rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm tabular-nums font-semibold"
+                  placeholder={t().common.blankEqualsNone}
+                  class="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100 dark:placeholder:text-slate-500 px-3 py-1.5 text-sm tabular-nums font-semibold"
                 />
               </div>
             </div>
@@ -647,8 +691,8 @@ export function MasterEditRequestModal(props: {
             {/* E. Buying Options */}
             <div class="space-y-2">
               <div class="flex items-center justify-between">
-                <h4 class="text-xs font-bold uppercase tracking-wider text-slate-500">
-                  Buying Options ({options().length})
+                <h4 class="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                  {t().masterModals.buyingOptionsCount(options().length)}
                 </h4>
                 <button
                   type="button"
@@ -667,22 +711,22 @@ export function MasterEditRequestModal(props: {
                       }
                     ]);
                   }}
-                  class="inline-flex items-center gap-1 rounded-lg bg-slate-900 px-2.5 py-1 text-xs font-semibold text-white hover:bg-slate-800 cursor-pointer"
+                  class="inline-flex items-center gap-1 rounded-lg bg-slate-900 dark:bg-slate-100 px-2.5 py-1 text-xs font-semibold text-white dark:text-slate-950 hover:bg-slate-800 dark:hover:bg-white cursor-pointer"
                 >
                   <Plus class="h-3.5 w-3.5" />
-                  Add Option
+                  {t().masterModals.addOption}
                 </button>
               </div>
               <div class="space-y-2">
                 <For each={options()}>
                   {(opt, i) => (
-                    <div class="rounded-xl border border-slate-200 bg-slate-50 p-3 space-y-2">
+                    <div class="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/70 p-3 space-y-2">
                       <div class="flex items-center justify-between text-xs">
-                        <span class="font-bold text-slate-700">
-                          Option #{i() + 1}
+                        <span class="font-bold text-slate-700 dark:text-slate-200">
+                          {t().masterModals.optionNumber(i() + 1)}
                           <Show when={selectedOptionClientKey() === opt.clientKey}>
-                            <span class="ml-2 rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-bold text-emerald-800">
-                              Selected
+                            <span class="ml-2 rounded bg-emerald-100 dark:bg-emerald-950/60 dark:border dark:border-emerald-800/70 px-1.5 py-0.5 text-[10px] font-bold text-emerald-800 dark:text-emerald-300">
+                              {t().masterModals.selectedTag}
                             </span>
                           </Show>
                         </span>
@@ -691,8 +735,8 @@ export function MasterEditRequestModal(props: {
                             type="button"
                             disabled={i() === 0}
                             onClick={() => moveOption(i(), -1)}
-                            class="rounded border border-slate-200 bg-white p-1 text-slate-500 hover:text-slate-800 disabled:opacity-30 cursor-pointer"
-                            title="Move Up"
+                            class="rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-1 text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-100 disabled:opacity-30 cursor-pointer"
+                            title={t().common.moveUp}
                           >
                             <ArrowUp class="h-3 w-3" />
                           </button>
@@ -700,18 +744,18 @@ export function MasterEditRequestModal(props: {
                             type="button"
                             disabled={i() === options().length - 1}
                             onClick={() => moveOption(i(), 1)}
-                            class="rounded border border-slate-200 bg-white p-1 text-slate-500 hover:text-slate-800 disabled:opacity-30 cursor-pointer"
-                            title="Move Down"
+                            class="rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-1 text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-100 disabled:opacity-30 cursor-pointer"
+                            title={t().common.moveDown}
                           >
                             <ArrowDown class="h-3 w-3" />
                           </button>
                           <button
                             type="button"
                             onClick={() => removeOption(opt.clientKey)}
-                            class="inline-flex items-center gap-1 text-rose-600 font-semibold cursor-pointer"
+                            class="inline-flex items-center gap-1 text-rose-600 dark:text-rose-400 font-semibold cursor-pointer"
                           >
                             <Trash2 class="h-3 w-3" />
-                            Remove
+                            {t().common.remove}
                           </button>
                         </div>
                       </div>
@@ -720,7 +764,7 @@ export function MasterEditRequestModal(props: {
                           type="text"
                           required
                           value={opt.label}
-                          placeholder="Supplier / Label"
+                          placeholder={t().masterModals.supplierPlaceholder}
                           onInput={e =>
                             setOptions(prev =>
                               prev.map((x, idx) =>
@@ -728,13 +772,13 @@ export function MasterEditRequestModal(props: {
                               )
                             )
                           }
-                          class="sm:col-span-2 rounded border border-slate-200 bg-white px-2.5 py-1.5 text-xs"
+                          class="sm:col-span-2 rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100 dark:placeholder:text-slate-500 px-2.5 py-1.5 text-xs"
                         />
                         <input
                           type="text"
                           required
                           value={opt.priceEur}
-                          placeholder="Price EUR"
+                          placeholder={t().masterModals.priceEurPlaceholder}
                           onInput={e =>
                             setOptions(prev =>
                               prev.map((x, idx) =>
@@ -742,13 +786,13 @@ export function MasterEditRequestModal(props: {
                               )
                             )
                           }
-                          class="rounded border border-slate-200 bg-white px-2.5 py-1.5 text-xs tabular-nums"
+                          class="rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100 dark:placeholder:text-slate-500 px-2.5 py-1.5 text-xs tabular-nums"
                         />
                       </div>
                       <input
                         type="text"
                         value={opt.drawbacks}
-                        placeholder="Drawbacks (optional)"
+                        placeholder={t().masterModals.drawbacksOptionalPlaceholder}
                         onInput={e =>
                           setOptions(prev =>
                             prev.map((x, idx) =>
@@ -756,13 +800,13 @@ export function MasterEditRequestModal(props: {
                             )
                           )
                         }
-                        class="w-full rounded border border-slate-200 bg-white px-2.5 py-1.5 text-xs"
+                        class="w-full rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100 dark:placeholder:text-slate-500 px-2.5 py-1.5 text-xs"
                       />
                       <div class="grid sm:grid-cols-2 gap-2">
                         <input
                           type="url"
                           value={opt.productUrl}
-                          placeholder="https://... (optional)"
+                          placeholder={t().masterModals.urlOptionalPlaceholder}
                           onInput={e =>
                             setOptions(prev =>
                               prev.map((x, idx) =>
@@ -770,12 +814,12 @@ export function MasterEditRequestModal(props: {
                               )
                             )
                           }
-                          class="rounded border border-slate-200 bg-white px-2.5 py-1.5 text-xs"
+                          class="rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100 dark:placeholder:text-slate-500 px-2.5 py-1.5 text-xs"
                         />
                         <input
                           type="text"
                           value={opt.notes}
-                          placeholder="Notes (optional)"
+                          placeholder={t().masterModals.notesOptionalPlaceholder}
                           onInput={e =>
                             setOptions(prev =>
                               prev.map((x, idx) =>
@@ -783,7 +827,7 @@ export function MasterEditRequestModal(props: {
                               )
                             )
                           }
-                          class="rounded border border-slate-200 bg-white px-2.5 py-1.5 text-xs"
+                          class="rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100 dark:placeholder:text-slate-500 px-2.5 py-1.5 text-xs"
                         />
                       </div>
                     </div>
@@ -793,15 +837,15 @@ export function MasterEditRequestModal(props: {
             </div>
 
             {/* F. Attachments */}
-            <div class="rounded-xl border border-slate-200 p-4 space-y-3">
-              <h4 class="text-xs font-bold uppercase tracking-wider text-slate-500">
-                Attachments ({attUpdates().length} existing)
+            <div class="rounded-xl border border-slate-200 dark:border-slate-800 p-4 space-y-3">
+              <h4 class="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                {t().masterModals.attachmentsExistingCount(attUpdates().length)}
               </h4>
               <Show when={attUpdates().length > 0}>
                 <div class="space-y-2">
                   <For each={attUpdates()}>
                     {(att, idx) => (
-                      <div class="flex flex-wrap items-center gap-2 rounded-lg bg-slate-50 border border-slate-200 p-2 text-xs">
+                      <div class="flex flex-wrap items-center gap-2 rounded-lg bg-slate-50 dark:bg-slate-800/70 border border-slate-200 dark:border-slate-700 p-2 text-xs">
                         <select
                           value={att.kind}
                           onChange={e =>
@@ -813,12 +857,12 @@ export function MasterEditRequestModal(props: {
                               )
                             )
                           }
-                          class="rounded border border-slate-200 bg-white px-2 py-1 text-xs"
+                          class="rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100 px-2 py-1 text-xs"
                         >
-                          <option value="photo">Photo</option>
-                          <option value="document">Document</option>
-                          <option value="fee_proof">Fee Proof</option>
-                          <option value="invoice">Invoice</option>
+                          <option value="photo">{getAttachmentKindLabel(locale(), "photo")}</option>
+                          <option value="document">{getAttachmentKindLabel(locale(), "document")}</option>
+                          <option value="fee_proof">{getAttachmentKindLabel(locale(), "fee_proof")}</option>
+                          <option value="invoice">{getAttachmentKindLabel(locale(), "invoice")}</option>
                         </select>
                         <input
                           type="text"
@@ -831,9 +875,9 @@ export function MasterEditRequestModal(props: {
                               )
                             )
                           }
-                          class="flex-1 min-w-[160px] rounded border border-slate-200 bg-white px-2 py-1 text-xs"
+                          class="flex-1 min-w-[160px] rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100 px-2 py-1 text-xs"
                         />
-                        <label class="inline-flex items-center gap-1.5 text-rose-700 font-semibold cursor-pointer">
+                        <label class="inline-flex items-center gap-1.5 text-rose-700 dark:text-rose-400 font-semibold cursor-pointer">
                           <input
                             type="checkbox"
                             checked={removeAttIds().includes(att.id)}
@@ -844,7 +888,7 @@ export function MasterEditRequestModal(props: {
                               );
                             }}
                           />
-                          Remove
+                          {t().common.remove}
                         </label>
                       </div>
                     )}
@@ -853,8 +897,8 @@ export function MasterEditRequestModal(props: {
               </Show>
 
               <div class="grid sm:grid-cols-4 gap-2 text-xs">
-                <label class="block rounded-lg border border-dashed border-slate-300 p-2.5 cursor-pointer">
-                  <span class="font-semibold block mb-1">Add Photos</span>
+                <label class="block rounded-lg border border-dashed border-slate-300 dark:border-slate-700 dark:bg-slate-950/50 dark:text-slate-300 dark:hover:border-slate-500 p-2.5 cursor-pointer">
+                  <span class="font-semibold block mb-1">{t().masterModals.addPhotos}</span>
                   <input
                     type="file"
                     multiple
@@ -862,22 +906,22 @@ export function MasterEditRequestModal(props: {
                     onChange={e =>
                       setNewPhotos(e.currentTarget.files ? Array.from(e.currentTarget.files) : [])
                     }
-                    class="w-full text-[11px]"
+                    class="w-full text-[11px] dark:text-slate-400 file:mr-2 file:rounded file:border-0 file:bg-slate-100 dark:file:bg-slate-800 file:px-2 file:py-1 file:text-[11px] file:font-semibold file:text-slate-700 dark:file:text-slate-200"
                   />
                 </label>
-                <label class="block rounded-lg border border-dashed border-slate-300 p-2.5 cursor-pointer">
-                  <span class="font-semibold block mb-1">Add Documents</span>
+                <label class="block rounded-lg border border-dashed border-slate-300 dark:border-slate-700 dark:bg-slate-950/50 dark:text-slate-300 dark:hover:border-slate-500 p-2.5 cursor-pointer">
+                  <span class="font-semibold block mb-1">{t().masterModals.addDocuments}</span>
                   <input
                     type="file"
                     multiple
                     onChange={e =>
                       setNewDocs(e.currentTarget.files ? Array.from(e.currentTarget.files) : [])
                     }
-                    class="w-full text-[11px]"
+                    class="w-full text-[11px] dark:text-slate-400 file:mr-2 file:rounded file:border-0 file:bg-slate-100 dark:file:bg-slate-800 file:px-2 file:py-1 file:text-[11px] file:font-semibold file:text-slate-700 dark:file:text-slate-200"
                   />
                 </label>
-                <label class="block rounded-lg border border-dashed border-slate-300 p-2.5 cursor-pointer">
-                  <span class="font-semibold block mb-1">Add Fee Proofs</span>
+                <label class="block rounded-lg border border-dashed border-slate-300 dark:border-slate-700 dark:bg-slate-950/50 dark:text-slate-300 dark:hover:border-slate-500 p-2.5 cursor-pointer">
+                  <span class="font-semibold block mb-1">{t().masterModals.addFeeProofs}</span>
                   <input
                     type="file"
                     multiple
@@ -886,11 +930,11 @@ export function MasterEditRequestModal(props: {
                         e.currentTarget.files ? Array.from(e.currentTarget.files) : []
                       )
                     }
-                    class="w-full text-[11px]"
+                    class="w-full text-[11px] dark:text-slate-400 file:mr-2 file:rounded file:border-0 file:bg-slate-100 dark:file:bg-slate-800 file:px-2 file:py-1 file:text-[11px] file:font-semibold file:text-slate-700 dark:file:text-slate-200"
                   />
                 </label>
-                <label class="block rounded-lg border border-dashed border-slate-300 p-2.5 cursor-pointer">
-                  <span class="font-semibold block mb-1">Add Invoices</span>
+                <label class="block rounded-lg border border-dashed border-slate-300 dark:border-slate-700 dark:bg-slate-950/50 dark:text-slate-300 dark:hover:border-slate-500 p-2.5 cursor-pointer">
+                  <span class="font-semibold block mb-1">{t().masterModals.addInvoices}</span>
                   <input
                     type="file"
                     multiple
@@ -899,7 +943,7 @@ export function MasterEditRequestModal(props: {
                         e.currentTarget.files ? Array.from(e.currentTarget.files) : []
                       )
                     }
-                    class="w-full text-[11px]"
+                    class="w-full text-[11px] dark:text-slate-400 file:mr-2 file:rounded file:border-0 file:bg-slate-100 dark:file:bg-slate-800 file:px-2 file:py-1 file:text-[11px] file:font-semibold file:text-slate-700 dark:file:text-slate-200"
                   />
                 </label>
               </div>
@@ -907,36 +951,36 @@ export function MasterEditRequestModal(props: {
 
             {/* G. Edit Reason */}
             <div>
-              <label class="block text-xs font-semibold text-slate-600 mb-1">
-                Item Log Note / Reason for Edit (optional)
+              <label class="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">
+                {t().masterModals.editReasonLabel}
               </label>
               <input
                 type="text"
                 value={editReason()}
                 onInput={e => setEditReason(e.currentTarget.value)}
-                placeholder="e.g. Corrected supplier invoice amount and date..."
-                class="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                placeholder={t().masterModals.editReasonRequestPlaceholder}
+                class="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100 dark:placeholder:text-slate-500 px-3 py-2 text-sm"
               />
             </div>
 
             <Show when={err()}>
-              <p class="text-xs font-medium text-red-600">{err()}</p>
+              <p class="text-xs font-medium text-red-600 dark:text-red-400">{err()}</p>
             </Show>
 
-            <div class="flex justify-end gap-2 pt-2 border-t border-slate-100">
+            <div class="flex justify-end gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
               <button
                 type="button"
                 onClick={props.onClose}
-                class="rounded-lg border border-slate-200 px-4 py-2 text-xs font-semibold text-slate-700 cursor-pointer"
+                class="rounded-lg border border-slate-200 dark:border-slate-700 px-4 py-2 text-xs font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer"
               >
-                Cancel
+                {t().common.cancel}
               </button>
               <button
                 type="submit"
                 disabled={busy()}
                 class="rounded-lg bg-red-600 px-5 py-2 text-xs font-semibold text-white hover:bg-red-700 disabled:opacity-50 cursor-pointer"
               >
-                {busy() ? "Saving & Logging..." : "Save Master Changes"}
+                {busy() ? t().masterModals.savingLoggingBtn : t().masterModals.saveMasterChangesBtn}
               </button>
             </div>
           </form>
@@ -953,6 +997,7 @@ export function MasterEditEntryModal(props: {
   onClose: () => void;
   onSuccess: () => Promise<void>;
 }) {
+  const { locale, t } = useI18n();
   const [entryCode, setEntryCode] = createSignal("");
   const [seasonId, setSeasonId] = createSignal("");
   const [title, setTitle] = createSignal("");
@@ -979,26 +1024,26 @@ export function MasterEditEntryModal(props: {
   const [err, setErr] = createSignal("");
 
   createEffect(() => {
-    const t = props.target;
-    if (!t) return;
-    setEntryCode(t.entryCode);
-    setSeasonId(t.seasonId);
-    setTitle(t.title);
-    setCategory(t.category);
-    setStatus(t.status);
-    setInitialAmountEur(formatCentsPlain(t.initialAmountCents));
+    const target = props.target;
+    if (!target) return;
+    setEntryCode(target.entryCode);
+    setSeasonId(target.seasonId);
+    setTitle(target.title);
+    setCategory(target.category);
+    setStatus(target.status);
+    setInitialAmountEur(formatCentsPlain(target.initialAmountCents));
     setConfirmedAmountEur(
-      t.confirmedAmountCents !== null ? formatCentsPlain(t.confirmedAmountCents) : ""
+      target.confirmedAmountCents !== null ? formatCentsPlain(target.confirmedAmountCents) : ""
     );
-    setEntryDate(toIsoDateInput(t.entryDate));
-    setComment(t.comment);
-    setCreatedById(t.createdById);
-    setConfirmedById(t.confirmedById ?? "");
-    setConfirmedAt(toDateTimeLocalInput(t.confirmedAt));
-    setCreatedAt(toDateTimeLocalInput(t.createdAt));
+    setEntryDate(toIsoDateInput(target.entryDate));
+    setComment(target.comment);
+    setCreatedById(target.createdById);
+    setConfirmedById(target.confirmedById ?? "");
+    setConfirmedAt(toDateTimeLocalInput(target.confirmedAt));
+    setCreatedAt(toDateTimeLocalInput(target.createdAt));
 
     setAttUpdates(
-      t.attachments.map(a => ({
+      target.attachments.map(a => ({
         id: a.id,
         originalName: a.originalName,
         kind: (a.kind === "invoice" ? "invoice" : "supporting_doc") as EntryAttKind
@@ -1013,8 +1058,8 @@ export function MasterEditEntryModal(props: {
 
   async function submit(e: SubmitEvent) {
     e.preventDefault();
-    const t = props.target;
-    if (!t) return;
+    const target = props.target;
+    if (!target) return;
     setBusy(true);
     setErr("");
     try {
@@ -1034,7 +1079,7 @@ export function MasterEditEntryModal(props: {
           createdById: createdById(),
           confirmedById: confirmedById() || null,
           confirmedAt: fromDateTimeLocalInput(confirmedAt()),
-          createdAt: fromDateTimeLocalInput(createdAt()) ?? t.createdAt,
+          createdAt: fromDateTimeLocalInput(createdAt()) ?? target.createdAt,
           attachmentUpdates: attUpdates(),
           removeAttachmentIds: removeAttIds(),
           editReason: editReason()
@@ -1043,17 +1088,17 @@ export function MasterEditEntryModal(props: {
       for (const f of newSupporting()) fd.append("supportingFiles", f);
       for (const f of newInvoices()) fd.append("invoiceFiles", f);
 
-      const res = await fetch(`/api/entries/${t.id}/master-edit`, {
+      const res = await fetch(`/api/entries/${target.id}/master-edit`, {
         method: "POST",
         body: fd
       });
       const json = await res.json();
-      if (!res.ok) throw new Error(json.error || "Failed to update money entry.");
+      if (!res.ok) throw new Error(json.error || t().masterModals.failedMasterEntryErr);
 
       props.onClose();
       await props.onSuccess();
     } catch (e2) {
-      setErr(e2 instanceof Error ? e2.message : "Failed to save Master changes.");
+      setErr(e2 instanceof Error ? e2.message : t().masterModals.failedMasterEntryErr);
     } finally {
       setBusy(false);
     }
@@ -1062,28 +1107,28 @@ export function MasterEditEntryModal(props: {
   return (
     <Show when={props.target}>
       {target => (
-        <div class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 p-4 overflow-y-auto">
+        <div class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 dark:bg-black/80 p-4 overflow-y-auto">
           <form
             onSubmit={submit}
-            class="w-full max-w-3xl rounded-2xl bg-white p-6 shadow-2xl space-y-5 my-6 max-h-[92vh] overflow-y-auto"
+            class="w-full max-w-3xl rounded-2xl bg-white dark:bg-slate-900 dark:border dark:border-slate-800 p-6 shadow-2xl space-y-5 my-6 max-h-[92vh] overflow-y-auto"
           >
-            <div class="flex items-start justify-between gap-3 border-b border-slate-100 pb-3">
+            <div class="flex items-start justify-between gap-3 border-b border-slate-100 dark:border-slate-800 pb-3">
               <div>
-                <div class="inline-flex items-center gap-1.5 rounded-full bg-red-50 px-2.5 py-0.5 text-[11px] font-bold uppercase tracking-wider text-red-700 mb-1">
+                <div class="inline-flex items-center gap-1.5 rounded-full bg-red-50 dark:bg-red-950/60 dark:border dark:border-red-900/60 px-2.5 py-0.5 text-[11px] font-bold uppercase tracking-wider text-red-700 dark:text-red-300 mb-1">
                   <ShieldAlert class="h-3.5 w-3.5" />
-                  Master Unrestricted Edit
+                  {t().masterModals.badgeUnrestricted}
                 </div>
-                <h3 class="text-lg font-extrabold text-slate-900">
-                  Edit Money Entry — {target().entryCode}
+                <h3 class="text-lg font-extrabold text-slate-900 dark:text-slate-100">
+                  {t().masterModals.editEntryTitle(target().entryCode)}
                 </h3>
-                <p class="text-xs text-slate-500">
-                  All changes will be logged in the entry item log and global audit log.
+                <p class="text-xs text-slate-500 dark:text-slate-400">
+                  {t().masterModals.editEntrySubtitle}
                 </p>
               </div>
               <button
                 type="button"
                 onClick={props.onClose}
-                class="text-slate-400 hover:text-slate-700 cursor-pointer"
+                class="text-slate-400 hover:text-slate-700 dark:text-slate-500 dark:hover:text-slate-200 cursor-pointer"
               >
                 <X class="h-5 w-5" />
               </button>
@@ -1091,117 +1136,137 @@ export function MasterEditEntryModal(props: {
 
             <div class="grid sm:grid-cols-3 gap-3">
               <div>
-                <label class="block text-xs font-semibold text-slate-600 mb-1">Entry ID / Code</label>
+                <label class="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">
+                  {t().masterModals.entryIdCode}
+                </label>
                 <input
                   type="text"
                   required
                   value={entryCode()}
                   onInput={e => setEntryCode(e.currentTarget.value)}
-                  class="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm font-mono uppercase"
+                  class="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100 px-3 py-2 text-sm font-mono uppercase"
                 />
               </div>
               <div>
-                <label class="block text-xs font-semibold text-slate-600 mb-1">Season</label>
+                <label class="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">
+                  {t().common.season}
+                </label>
                 <select
                   value={seasonId()}
                   onChange={e => setSeasonId(e.currentTarget.value)}
-                  class="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm"
+                  class="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100 px-3 py-2 text-sm"
                 >
                   <For each={props.seasons}>
                     {s => (
                       <option value={s.id}>
-                        {s.name} ({s.yearCode}){s.status === "archived" ? " [Archived]" : ""}
+                        {s.name} ({s.yearCode}){s.status === "archived" ? t().masterModals.archivedSuffix : ""}
                       </option>
                     )}
                   </For>
                 </select>
               </div>
               <div>
-                <label class="block text-xs font-semibold text-slate-600 mb-1">Entry Date</label>
+                <label class="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">
+                  {t().budgetModals.entryDate}
+                </label>
                 <input
                   type="date"
                   required
                   value={entryDate()}
                   onInput={e => setEntryDate(e.currentTarget.value)}
-                  class="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                  class="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100 px-3 py-2 text-sm"
                 />
               </div>
               <div>
-                <label class="block text-xs font-semibold text-slate-600 mb-1">Category</label>
+                <label class="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">
+                  {t().common.category}
+                </label>
                 <select
                   value={category()}
                   onChange={e => setCategory(e.currentTarget.value as EntryCategory)}
-                  class="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm"
+                  class="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100 px-3 py-2 text-sm"
                 >
                   <For each={ENTRY_CATEGORIES}>
-                    {c => <option value={c.id}>{c.label}</option>}
+                    {c => <option value={c.id}>{getEntryCategoryLabel(locale(), c.id)}</option>}
                   </For>
                 </select>
               </div>
               <div>
-                <label class="block text-xs font-semibold text-slate-600 mb-1">Status</label>
+                <label class="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">
+                  {t().common.status}
+                </label>
                 <select
                   value={status()}
                   onChange={e => setStatus(e.currentTarget.value as EntryStatus)}
-                  class="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm"
+                  class="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100 px-3 py-2 text-sm"
                 >
                   <For each={ENTRY_STATUSES}>
-                    {st => <option value={st}>{ENTRY_STATUS_LABELS[st]}</option>}
+                    {st => <option value={st}>{getEntryStatusLabel(locale(), st)}</option>}
                   </For>
                 </select>
               </div>
               <div class="grid grid-cols-2 gap-2">
                 <div>
-                  <label class="block text-xs font-semibold text-slate-600 mb-1">Initial EUR</label>
+                  <label class="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">
+                    {t().masterModals.initialEur}
+                  </label>
                   <input
                     type="text"
                     required
                     value={initialAmountEur()}
                     onInput={e => setInitialAmountEur(e.currentTarget.value)}
-                    class="w-full rounded-lg border border-slate-200 px-2.5 py-2 text-sm tabular-nums"
+                    class="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100 px-2.5 py-2 text-sm tabular-nums"
                   />
                 </div>
                 <div>
-                  <label class="block text-xs font-semibold text-slate-600 mb-1">Confirmed EUR</label>
+                  <label class="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">
+                    {t().masterModals.confirmedEur}
+                  </label>
                   <input
                     type="text"
                     value={confirmedAmountEur()}
                     onInput={e => setConfirmedAmountEur(e.currentTarget.value)}
-                    placeholder="Blank = None"
-                    class="w-full rounded-lg border border-slate-200 px-2.5 py-2 text-sm tabular-nums"
+                    placeholder={t().common.blankEqualsNone}
+                    class="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100 dark:placeholder:text-slate-500 px-2.5 py-2 text-sm tabular-nums"
                   />
                 </div>
               </div>
             </div>
 
             <div>
-              <label class="block text-xs font-semibold text-slate-600 mb-1">Title / Entity</label>
+              <label class="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">
+                {t().budgetModals.titleEntityLabel}
+              </label>
               <input
                 type="text"
                 required
                 value={title()}
                 onInput={e => setTitle(e.currentTarget.value)}
-                class="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                class="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100 px-3 py-2 text-sm"
               />
             </div>
 
             <div>
-              <label class="block text-xs font-semibold text-slate-600 mb-1">Comment / Notes</label>
+              <label class="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">
+                {t().masterModals.commentNotes}
+              </label>
               <textarea
                 rows={3}
                 value={comment()}
                 onInput={e => setComment(e.currentTarget.value)}
-                class="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                class="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100 px-3 py-2 text-sm"
               />
             </div>
 
-            <div class="rounded-xl border border-slate-200 bg-slate-50/70 p-4 grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
+            <div class="rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/50 p-4 grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
               <div>
-                <label class="block text-xs font-semibold text-slate-600 mb-1">Creator</label>
+                <label class="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">
+                  {t().common.creator}
+                </label>
                 <select
                   value={createdById()}
                   onChange={e => setCreatedById(e.currentTarget.value)}
-                  class="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-xs"
+                  class="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100 px-2.5 py-2 text-xs"
                 >
                   <For each={props.users}>
                     {u => <option value={u.id}>{u.fullName}</option>}
@@ -1209,23 +1274,27 @@ export function MasterEditEntryModal(props: {
                 </select>
               </div>
               <div>
-                <label class="block text-xs font-semibold text-slate-600 mb-1">Created At</label>
+                <label class="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">
+                  {t().common.createdAt}
+                </label>
                 <input
                   type="datetime-local"
                   required
                   value={createdAt()}
                   onInput={e => setCreatedAt(e.currentTarget.value)}
-                  class="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs"
+                  class="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100 px-2.5 py-1.5 text-xs"
                 />
               </div>
               <div>
-                <label class="block text-xs font-semibold text-slate-600 mb-1">Confirmed By</label>
+                <label class="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">
+                  {t().masterModals.confirmedBy}
+                </label>
                 <select
                   value={confirmedById()}
                   onChange={e => setConfirmedById(e.currentTarget.value)}
-                  class="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-xs"
+                  class="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100 px-2.5 py-2 text-xs"
                 >
-                  <option value="">(None)</option>
+                  <option value="">{t().common.none}</option>
                   <For each={props.users}>
                     {u => <option value={u.id}>{u.fullName}</option>}
                   </For>
@@ -1233,14 +1302,16 @@ export function MasterEditEntryModal(props: {
               </div>
               <div>
                 <div class="flex items-center justify-between mb-1">
-                  <label class="text-xs font-semibold text-slate-600">Confirmed At</label>
+                  <label class="text-xs font-semibold text-slate-600 dark:text-slate-300">
+                    {t().masterModals.confirmedAt}
+                  </label>
                   <Show when={confirmedAt()}>
                     <button
                       type="button"
                       onClick={() => setConfirmedAt("")}
-                      class="text-[11px] text-rose-600 hover:underline cursor-pointer"
+                      class="text-[11px] text-rose-600 dark:text-rose-400 hover:underline cursor-pointer"
                     >
-                      Clear
+                      {t().common.clear}
                     </button>
                   </Show>
                 </div>
@@ -1248,20 +1319,20 @@ export function MasterEditEntryModal(props: {
                   type="datetime-local"
                   value={confirmedAt()}
                   onInput={e => setConfirmedAt(e.currentTarget.value)}
-                  class="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs"
+                  class="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100 px-2.5 py-1.5 text-xs"
                 />
               </div>
             </div>
 
-            <div class="rounded-xl border border-slate-200 p-4 space-y-3">
-              <h4 class="text-xs font-bold uppercase tracking-wider text-slate-500">
-                Attachments ({attUpdates().length} existing)
+            <div class="rounded-xl border border-slate-200 dark:border-slate-800 p-4 space-y-3">
+              <h4 class="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                {t().masterModals.attachmentsExistingCount(attUpdates().length)}
               </h4>
               <Show when={attUpdates().length > 0}>
                 <div class="space-y-2">
                   <For each={attUpdates()}>
                     {(att, idx) => (
-                      <div class="flex flex-wrap items-center gap-2 rounded-lg bg-slate-50 border border-slate-200 p-2 text-xs">
+                      <div class="flex flex-wrap items-center gap-2 rounded-lg bg-slate-50 dark:bg-slate-800/70 border border-slate-200 dark:border-slate-700 p-2 text-xs">
                         <select
                           value={att.kind}
                           onChange={e =>
@@ -1273,10 +1344,14 @@ export function MasterEditEntryModal(props: {
                               )
                             )
                           }
-                          class="rounded border border-slate-200 bg-white px-2 py-1 text-xs"
+                          class="rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100 px-2 py-1 text-xs"
                         >
-                          <option value="supporting_doc">Supporting Doc</option>
-                          <option value="invoice">Invoice / Proof</option>
+                          <option value="supporting_doc">
+                            {getAttachmentKindLabel(locale(), "supporting_doc")}
+                          </option>
+                          <option value="invoice">
+                            {getAttachmentKindLabel(locale(), "invoice")}
+                          </option>
                         </select>
                         <input
                           type="text"
@@ -1289,9 +1364,9 @@ export function MasterEditEntryModal(props: {
                               )
                             )
                           }
-                          class="flex-1 min-w-[160px] rounded border border-slate-200 bg-white px-2 py-1 text-xs"
+                          class="flex-1 min-w-[160px] rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100 px-2 py-1 text-xs"
                         />
-                        <label class="inline-flex items-center gap-1.5 text-rose-700 font-semibold cursor-pointer">
+                        <label class="inline-flex items-center gap-1.5 text-rose-700 dark:text-rose-400 font-semibold cursor-pointer">
                           <input
                             type="checkbox"
                             checked={removeAttIds().includes(att.id)}
@@ -1302,7 +1377,7 @@ export function MasterEditEntryModal(props: {
                               );
                             }}
                           />
-                          Remove
+                          {t().common.remove}
                         </label>
                       </div>
                     )}
@@ -1311,8 +1386,10 @@ export function MasterEditEntryModal(props: {
               </Show>
 
               <div class="grid sm:grid-cols-2 gap-2 text-xs">
-                <label class="block rounded-lg border border-dashed border-slate-300 p-2.5 cursor-pointer">
-                  <span class="font-semibold block mb-1">Add Supporting Documents</span>
+                <label class="block rounded-lg border border-dashed border-slate-300 dark:border-slate-700 dark:bg-slate-950/50 dark:text-slate-300 dark:hover:border-slate-500 p-2.5 cursor-pointer">
+                  <span class="font-semibold block mb-1">
+                    {t().masterModals.addSupportingDocuments}
+                  </span>
                   <input
                     type="file"
                     multiple
@@ -1321,11 +1398,13 @@ export function MasterEditEntryModal(props: {
                         e.currentTarget.files ? Array.from(e.currentTarget.files) : []
                       )
                     }
-                    class="w-full text-[11px]"
+                    class="w-full text-[11px] dark:text-slate-400 file:mr-2 file:rounded file:border-0 file:bg-slate-100 dark:file:bg-slate-800 file:px-2 file:py-1 file:text-[11px] file:font-semibold file:text-slate-700 dark:file:text-slate-200"
                   />
                 </label>
-                <label class="block rounded-lg border border-dashed border-slate-300 p-2.5 cursor-pointer">
-                  <span class="font-semibold block mb-1">Add Invoice / Bank Proof</span>
+                <label class="block rounded-lg border border-dashed border-slate-300 dark:border-slate-700 dark:bg-slate-950/50 dark:text-slate-300 dark:hover:border-slate-500 p-2.5 cursor-pointer">
+                  <span class="font-semibold block mb-1">
+                    {t().masterModals.addInvoiceBankProof}
+                  </span>
                   <input
                     type="file"
                     multiple
@@ -1334,43 +1413,43 @@ export function MasterEditEntryModal(props: {
                         e.currentTarget.files ? Array.from(e.currentTarget.files) : []
                       )
                     }
-                    class="w-full text-[11px]"
+                    class="w-full text-[11px] dark:text-slate-400 file:mr-2 file:rounded file:border-0 file:bg-slate-100 dark:file:bg-slate-800 file:px-2 file:py-1 file:text-[11px] file:font-semibold file:text-slate-700 dark:file:text-slate-200"
                   />
                 </label>
               </div>
             </div>
 
             <div>
-              <label class="block text-xs font-semibold text-slate-600 mb-1">
-                Item Log Note / Reason for Edit (optional)
+              <label class="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">
+                {t().masterModals.editReasonLabel}
               </label>
               <input
                 type="text"
                 value={editReason()}
                 onInput={e => setEditReason(e.currentTarget.value)}
-                placeholder="e.g. Corrected bank confirmation amount and date..."
-                class="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                placeholder={t().masterModals.editReasonEntryPlaceholder}
+                class="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100 dark:placeholder:text-slate-500 px-3 py-2 text-sm"
               />
             </div>
 
             <Show when={err()}>
-              <p class="text-xs font-medium text-red-600">{err()}</p>
+              <p class="text-xs font-medium text-red-600 dark:text-red-400">{err()}</p>
             </Show>
 
-            <div class="flex justify-end gap-2 pt-2 border-t border-slate-100">
+            <div class="flex justify-end gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
               <button
                 type="button"
                 onClick={props.onClose}
-                class="rounded-lg border border-slate-200 px-4 py-2 text-xs font-semibold text-slate-700 cursor-pointer"
+                class="rounded-lg border border-slate-200 dark:border-slate-700 px-4 py-2 text-xs font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer"
               >
-                Cancel
+                {t().common.cancel}
               </button>
               <button
                 type="submit"
                 disabled={busy()}
                 class="rounded-lg bg-red-600 px-5 py-2 text-xs font-semibold text-white hover:bg-red-700 disabled:opacity-50 cursor-pointer"
               >
-                {busy() ? "Saving & Logging..." : "Save Master Changes"}
+                {busy() ? t().masterModals.savingLoggingBtn : t().masterModals.saveMasterChangesBtn}
               </button>
             </div>
           </form>
@@ -1384,6 +1463,7 @@ export function EntryItemLogModal(props: {
   entry: { id: string; entryCode: string; title: string } | null;
   onClose: () => void;
 }) {
+  const { locale, t } = useI18n();
   const logData = createAsync(() =>
     props.entry ? queryEntryItemLog(props.entry.id) : Promise.resolve(null)
   );
@@ -1391,24 +1471,24 @@ export function EntryItemLogModal(props: {
   return (
     <Show when={props.entry}>
       {target => (
-        <div class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 p-4 overflow-y-auto">
-          <div class="w-full max-w-2xl rounded-2xl bg-white p-6 shadow-2xl space-y-4 my-6 max-h-[85vh] overflow-y-auto">
-            <div class="flex items-start justify-between gap-3 border-b border-slate-100 pb-3">
+        <div class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 dark:bg-black/80 p-4 overflow-y-auto">
+          <div class="w-full max-w-2xl rounded-2xl bg-white dark:bg-slate-900 dark:border dark:border-slate-800 p-6 shadow-2xl space-y-4 my-6 max-h-[85vh] overflow-y-auto">
+            <div class="flex items-start justify-between gap-3 border-b border-slate-100 dark:border-slate-800 pb-3">
               <div>
-                <div class="flex items-center gap-2 text-xs text-slate-500">
+                <div class="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
                   <History class="h-4 w-4" />
-                  <span>Money Entry Item Log</span>
-                  <span class="font-mono font-bold text-slate-800">{target().entryCode}</span>
+                  <span>{t().masterModals.itemLogHeader}</span>
+                  <span class="font-mono font-bold text-slate-800 dark:text-slate-200">{target().entryCode}</span>
                   <Show when={logData()?.entry.status}>
                     {st => <EntryStatusBadge status={st()} />}
                   </Show>
                 </div>
-                <h3 class="text-base font-bold text-slate-900 mt-1">{target().title}</h3>
+                <h3 class="text-base font-bold text-slate-900 dark:text-slate-100 mt-1">{target().title}</h3>
               </div>
               <button
                 type="button"
                 onClick={props.onClose}
-                class="text-slate-400 hover:text-slate-700 cursor-pointer"
+                class="text-slate-400 hover:text-slate-700 dark:text-slate-500 dark:hover:text-slate-200 cursor-pointer"
               >
                 <X class="h-5 w-5" />
               </button>
@@ -1417,22 +1497,24 @@ export function EntryItemLogModal(props: {
             <Show
               when={logData()}
               fallback={
-                <div class="py-8 text-center text-sm text-slate-400">Loading item log...</div>
+                <div class="py-8 text-center text-sm text-slate-400 dark:text-slate-500">
+                  {t().masterModals.loadingItemLog}
+                </div>
               }
             >
               {data => (
                 <Show
                   when={data().events.length > 0}
                   fallback={
-                    <div class="py-8 text-center text-sm text-slate-400">
-                      No item log events recorded yet.
+                    <div class="py-8 text-center text-sm text-slate-400 dark:text-slate-500">
+                      {t().masterModals.noItemLogEvents}
                     </div>
                   }
                 >
                   <div class="space-y-4">
                     <For each={data().events}>
                       {ev => (
-                        <div class="flex gap-3 border-l-2 border-slate-200 pl-4 py-1">
+                        <div class="flex gap-3 border-l-2 border-slate-200 dark:border-slate-700 pl-4 py-1">
                           <UserAvatar
                             name={ev.actorName}
                             avatarId={ev.actorAvatarId}
@@ -1440,8 +1522,8 @@ export function EntryItemLogModal(props: {
                           />
                           <div class="flex-1 min-w-0 space-y-1">
                             <div class="flex flex-wrap items-center gap-2 text-xs">
-                              <span class="font-bold text-slate-900">{ev.actorName}</span>
-                              <span class="text-slate-400">{ev.actorTitle}</span>
+                              <span class="font-bold text-slate-900 dark:text-slate-100">{ev.actorName}</span>
+                              <span class="text-slate-400 dark:text-slate-500">{ev.actorTitle}</span>
                               <RoleBadge
                                 role={
                                   (["master", "approver", "requestor", "viewer"].includes(
@@ -1452,19 +1534,20 @@ export function EntryItemLogModal(props: {
                                 }
                               />
                               <span
+                                title={ev.eventType}
                                 class={`rounded px-1.5 py-0.5 font-mono text-[10px] font-semibold ${
                                   ev.eventType === "master_edited"
-                                    ? "bg-red-50 text-red-700 border border-red-200"
-                                    : "bg-slate-100 text-slate-600"
+                                    ? "bg-red-50 dark:bg-red-950/60 text-red-700 dark:text-red-300 border border-red-200 dark:border-red-900/60"
+                                    : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300"
                                 }`}
                               >
-                                {ev.eventType}
+                                {getTimelineEventLabel(locale(), ev.eventType)}
                               </span>
-                              <span class="text-slate-400 ml-auto">
-                                {formatDateTime(ev.createdAt)}
+                              <span class="text-slate-400 dark:text-slate-500 ml-auto">
+                                {formatDateTime(ev.createdAt, locale())}
                               </span>
                             </div>
-                            <p class="text-sm text-slate-800 whitespace-pre-wrap">{ev.comment}</p>
+                            <p class="text-sm text-slate-800 dark:text-slate-200 whitespace-pre-wrap">{ev.comment}</p>
                           </div>
                         </div>
                       )}
@@ -1485,6 +1568,7 @@ export function MasterDeleteConfirmModal(props: {
   onClose: () => void;
   onDeleted: () => Promise<void>;
 }) {
+  const { t } = useI18n();
   const [reason, setReason] = createSignal("");
   const [busy, setBusy] = createSignal(false);
   const [err, setErr] = createSignal("");
@@ -1498,24 +1582,24 @@ export function MasterDeleteConfirmModal(props: {
 
   async function confirmDelete(e: SubmitEvent) {
     e.preventDefault();
-    const t = props.target;
-    if (!t) return;
+    const target = props.target;
+    if (!target) return;
     setBusy(true);
     setErr("");
     try {
-      const url = t.kind === "request" ? `/api/requests/${t.id}` : `/api/entries/${t.id}`;
+      const url = target.kind === "request" ? `/api/requests/${target.id}` : `/api/entries/${target.id}`;
       const res = await fetch(url, {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ reason: reason() })
       });
       const json = await res.json();
-      if (!res.ok) throw new Error(json.error || "Failed to delete record.");
+      if (!res.ok) throw new Error(json.error || t().masterModals.failedDeleteErr);
 
       props.onClose();
       await props.onDeleted();
     } catch (e2) {
-      setErr(e2 instanceof Error ? e2.message : "Failed to delete record.");
+      setErr(e2 instanceof Error ? e2.message : t().masterModals.failedDeleteErr);
     } finally {
       setBusy(false);
     }
@@ -1524,64 +1608,70 @@ export function MasterDeleteConfirmModal(props: {
   return (
     <Show when={props.target}>
       {target => (
-        <div class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 p-4">
+        <div class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 dark:bg-black/80 p-4">
           <form
             onSubmit={confirmDelete}
-            class="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl space-y-4"
+            class="w-full max-w-md rounded-2xl bg-white dark:bg-slate-900 dark:border dark:border-slate-800 p-6 shadow-2xl space-y-4"
           >
             <div class="flex items-start justify-between gap-3">
-              <div class="flex items-center gap-2 text-rose-700">
+              <div class="flex items-center gap-2 text-rose-700 dark:text-rose-400">
                 <AlertTriangle class="h-5 w-5 shrink-0" />
                 <h3 class="text-base font-extrabold">
-                  Delete {target().kind === "request" ? "Purchase Request" : "Money Entry"}?
+                  {target().kind === "request"
+                    ? t().masterModals.deleteRequestTitle
+                    : t().masterModals.deleteEntryTitle}
                 </h3>
               </div>
               <button
                 type="button"
                 onClick={props.onClose}
-                class="text-slate-400 hover:text-slate-700 cursor-pointer"
+                class="text-slate-400 hover:text-slate-700 dark:text-slate-500 dark:hover:text-slate-200 cursor-pointer"
               >
                 <X class="h-5 w-5" />
               </button>
             </div>
 
-            <div class="rounded-xl border border-rose-200 bg-rose-50 p-3.5 text-xs text-rose-900 space-y-1">
+            <div class="rounded-xl border border-rose-200 dark:border-rose-900/70 bg-rose-50 dark:bg-rose-950/50 p-3.5 text-xs text-rose-900 dark:text-rose-200 space-y-1">
               <div class="font-mono font-bold">{target().code}</div>
               <div class="font-semibold text-sm">{target().title}</div>
               <Show when={target().statusLabel}>
-                <div>Status: {target().statusLabel}</div>
+                <div>
+                  {t().masterModals.statusPrefix} {target().statusLabel}
+                </div>
               </Show>
-              <p class="pt-1 text-rose-700">
-                This permanently removes the record
-                {target().kind === "request" ? ", its buying options, item timeline," : ", its item log,"}
-                {" "}and {target().attachmentCount ?? 0} uploaded attachment file(s) from the server. A deletion snapshot stays in the global audit log.
+              <p class="pt-1 text-rose-700 dark:text-rose-300">
+                {t().masterModals.deleteWarningPrefix}
+                {target().kind === "request"
+                  ? t().masterModals.deleteWarningRequestMid
+                  : t().masterModals.deleteWarningEntryMid}
+                {t().masterModals.deleteWarningSuffix(target().attachmentCount ?? 0)}
               </p>
             </div>
 
             <div>
-              <label class="block text-xs font-semibold text-slate-600 mb-1">
-                Deletion Reason (optional, saved to Global Audit Log)
+              <label class="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">
+                {t().masterModals.deletionReasonLabel}
               </label>
               <input
                 type="text"
                 value={reason()}
                 onInput={e => setReason(e.currentTarget.value)}
-                placeholder="e.g. Duplicate import entry or test item..."
-                class="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                placeholder={t().masterModals.deletionReasonPlaceholder}
+                class="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100 dark:placeholder:text-slate-500 px-3 py-2 text-sm"
               />
             </div>
 
             <Show when={err()}>
-              <p class="text-xs font-medium text-red-600">{err()}</p>
+              <p class="text-xs font-medium text-red-600 dark:text-red-400">{err()}</p>
             </Show>
 
             <div class="flex justify-end gap-2">
               <button
                 type="button"
                 onClick={props.onClose}
-                class="rounded-lg border border-slate-200 px-4 py-2 text-xs font-semibold text-slate-700 cursor-pointer"
+                class="rounded-lg border border-slate-200 dark:border-slate-700 px-4 py-2 text-xs font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer"
               >
-                Cancel
+                {t().common.cancel}
               </button>
               <button
                 type="submit"
@@ -1589,7 +1679,7 @@ export function MasterDeleteConfirmModal(props: {
                 class="inline-flex items-center gap-1.5 rounded-lg bg-rose-600 px-4 py-2 text-xs font-semibold text-white hover:bg-rose-700 disabled:opacity-50 cursor-pointer"
               >
                 <Trash2 class="h-3.5 w-3.5" />
-                {busy() ? "Deleting..." : "Permanently Delete"}
+                {busy() ? t().masterModals.deletingBtn : t().masterModals.permanentlyDeleteBtn}
               </button>
             </div>
           </form>

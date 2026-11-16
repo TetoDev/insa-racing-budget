@@ -247,7 +247,9 @@ describe("budget analytics and period rates", () => {
 });
 
 import {
+  filterAuditLogsByQuery,
   filterEntriesByQuery,
+  filterRequestsByQuery,
   getBudgetUtilizationStatus,
   getDatePresetRange
 } from "~/lib/budget-analytics";
@@ -417,5 +419,75 @@ describe("budget improvements: envelopes, variance, entry filters, presets & run
       fromDate: "",
       toDate: ""
     });
+  });
+
+  it("filters purchase requests and audit logs client-side across multi-term queries", () => {
+    const reqs = [
+      {
+        requestCode: "26-CHAS-001",
+        title: "4130 Chromoly Tubes",
+        carSystem: "Chassis / Frame",
+        explanation: "Main hoop tubing",
+        department: "chassis" as const,
+        status: "pending_review" as const,
+        creatorName: "Marc Chassis"
+      },
+      {
+        requestCode: "26-AERO-002",
+        title: "Endplate Foam Core",
+        carSystem: "Aerodynamics / Front Wing",
+        explanation: "Cancelled test buy",
+        department: "aero" as const,
+        status: "withdrawn_archived" as const,
+        creatorName: "Claire Aero"
+      },
+      {
+        requestCode: "26-ELEC-003",
+        title: "CAN Bus Transceivers",
+        carSystem: "Electronics / LV",
+        explanation: "Bench spares",
+        department: "electronics" as const,
+        status: "order" as const,
+        creatorName: "Luc Elec"
+      }
+    ];
+
+    expect(filterRequestsByQuery(reqs, { query: "tubing" }).map(r => r.requestCode)).toEqual([
+      "26-CHAS-001"
+    ]);
+    expect(
+      filterRequestsByQuery(reqs, { query: "aero", status: "archived" }).map(r => r.requestCode)
+    ).toEqual(["26-AERO-002"]);
+    expect(
+      filterRequestsByQuery(reqs, {
+        query: "can",
+        status: "order",
+        department: "electronics"
+      }).map(r => r.requestCode)
+    ).toEqual(["26-ELEC-003"]);
+    expect(
+      filterRequestsByQuery(reqs, { query: "", status: "order", department: "chassis" })
+    ).toEqual([]);
+
+    const logs = [
+      {
+        action: "request_created",
+        targetCode: "26-CHAS-001",
+        summary: "Created request 4130 Chromoly Tubes",
+        actorLabel: "Marc Chassis (Requestor)"
+      },
+      {
+        action: "entry_confirmed",
+        targetCode: "26-ENT-001",
+        summary: "Confirmed FSDIE grant installment",
+        actorLabel: "Master Admin"
+      }
+    ];
+
+    expect(filterAuditLogsByQuery(logs, "chromoly marc").map(l => l.targetCode)).toEqual([
+      "26-CHAS-001"
+    ]);
+    expect(filterAuditLogsByQuery(logs, "fsdie").map(l => l.targetCode)).toEqual(["26-ENT-001"]);
+    expect(filterAuditLogsByQuery(logs, "")).toHaveLength(2);
   });
 });

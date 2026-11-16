@@ -26,7 +26,7 @@ import {
   XCircle
 } from "lucide-solid";
 import { For, Show, createEffect, createSignal } from "solid-js";
-import { useApp } from "~/components/AppContext";
+import { useApp, useI18n } from "~/components/AppContext";
 import {
   DepartmentBadge,
   RequestStatusBadge,
@@ -40,8 +40,12 @@ import {
   MasterEditRequestModal,
   type MasterDeleteTarget
 } from "~/components/MasterModals";
-import { REQUEST_STATUS_LABELS } from "~/lib/constants";
 import { formatBytes, formatCentsPlain, formatDateTime, formatEur } from "~/lib/format";
+import {
+  getAttachmentKindLabel,
+  getRequestStatusLabel,
+  getTimelineEventLabel
+} from "~/lib/i18n";
 import {
   canCommentOnRequests,
   canEditOrWithdrawUnreviewedRequest,
@@ -66,6 +70,7 @@ export default function RequestDetailPage() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const app = useApp();
+  const { locale, t } = useI18n();
   const detail = createAsync(() => queryRequestDetail(params.id ?? ""));
   const masterUsers = createAsync(() =>
     isMaster(app.user()?.role) ? queryMasterUsers() : Promise.resolve([])
@@ -191,13 +196,13 @@ export default function RequestDetailPage() {
       }
       const res = await fetch(`/api/requests/${d.id}/fees`, { method: "POST", body: fd });
       const json = await res.json();
-      if (!res.ok) throw new Error(json.error || "Failed to update fees.");
+      if (!res.ok) throw new Error(json.error || t().requestDetail.failedFeesErr);
       setFeeProofFiles([]);
       setFeeComment("");
-      setFeeMsg("Supplemental charges updated.");
+      setFeeMsg(t().requestDetail.feesUpdatedMsg);
       await refreshAll();
     } catch (err) {
-      setFeeErr(err instanceof Error ? err.message : "Failed to update charges.");
+      setFeeErr(err instanceof Error ? err.message : t().requestDetail.failedFeesErr);
     } finally {
       setFeeBusy(false);
     }
@@ -208,7 +213,7 @@ export default function RequestDetailPage() {
     const d = detail();
     const file = invoiceFile();
     if (!d || !file) {
-      setInvErr("Please select the invoice file first.");
+      setInvErr(t().requestDetail.selectInvoiceRequiredErr);
       return;
     }
     setInvBusy(true);
@@ -220,12 +225,12 @@ export default function RequestDetailPage() {
       fd.set("comment", invoiceComment());
       const res = await fetch(`/api/requests/${d.id}/invoice`, { method: "POST", body: fd });
       const json = await res.json();
-      if (!res.ok) throw new Error(json.error || "Failed to upload invoice.");
+      if (!res.ok) throw new Error(json.error || t().requestDetail.failedInvoiceErr);
       setInvoiceFile(null);
       setInvoiceComment("");
       await refreshAll();
     } catch (err) {
-      setInvErr(err instanceof Error ? err.message : "Failed to finalize spending.");
+      setInvErr(err instanceof Error ? err.message : t().requestDetail.failedInvoiceErr);
     } finally {
       setInvBusy(false);
     }
@@ -253,11 +258,11 @@ export default function RequestDetailPage() {
       for (const f of editNewDocs()) fd.append("documents", f);
       const res = await fetch(`/api/requests/${d.id}/edit`, { method: "POST", body: fd });
       const json = await res.json();
-      if (!res.ok) throw new Error(json.error || "Failed to save edits.");
+      if (!res.ok) throw new Error(json.error || t().requestDetail.failedEditErr);
       setEditOpen(false);
       await refreshAll();
     } catch (err) {
-      setEditErr(err instanceof Error ? err.message : "Failed to edit request.");
+      setEditErr(err instanceof Error ? err.message : t().requestDetail.failedEditErr);
     } finally {
       setEditBusy(false);
     }
@@ -268,22 +273,25 @@ export default function RequestDetailPage() {
   return (
     <div class="space-y-6">
       <Title>
-        {detail() ? `${detail()!.requestCode} — ${detail()!.title}` : "Request Details"} — INSA Racing
+        {detail()
+          ? `${detail()!.requestCode} — ${detail()!.title}`
+          : t().requestDetail.defaultTitle}{" "}
+        — INSA Racing
       </Title>
 
       <A
         href="/requests"
-        class="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-500 hover:text-slate-900"
+        class="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100"
       >
         <ArrowLeft class="h-3.5 w-3.5" />
-        Back to all requests
+        {t().requestDetail.backToAll}
       </A>
 
       <Show
         when={detail()}
         fallback={
-          <div class="rounded-2xl border border-slate-200 bg-white p-10 text-center text-sm text-slate-500">
-            Loading purchase request details...
+          <div class="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-10 text-center text-sm text-slate-500 dark:text-slate-400">
+            {t().requestDetail.loadingDetails}
           </div>
         }
       >
@@ -328,44 +336,45 @@ export default function RequestDetailPage() {
           return (
             <div class="space-y-6">
               {/* Header Card */}
-              <div class="rounded-2xl border border-slate-200 bg-white p-6 shadow-xs space-y-4">
+              <div class="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 shadow-xs space-y-4">
                 <div class="flex flex-col md:flex-row md:items-start justify-between gap-4">
                   <div class="space-y-2">
                     <div class="flex flex-wrap items-center gap-2">
-                      <span class="rounded-lg bg-slate-950 px-3 py-1 font-mono text-sm font-bold text-white">
+                      <span class="rounded-lg bg-slate-950 dark:bg-slate-800 border border-transparent dark:border-slate-700 px-3 py-1 font-mono text-sm font-bold text-white">
                         {d().requestCode}
                       </span>
                       <button
                         type="button"
                         onClick={e => {
                           const btn = e.currentTarget;
+                          const copyIdLabel = t().requestDetail.copyId;
                           navigator.clipboard?.writeText(d().requestCode).catch(() => {});
-                          btn.textContent = "Copied!";
+                          btn.textContent = t().common.copied;
                           setTimeout(() => {
-                            btn.textContent = "Copy ID";
+                            btn.textContent = copyIdLabel;
                           }, 1500);
                         }}
-                        class="rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-[11px] font-semibold text-slate-600 hover:bg-slate-100 cursor-pointer"
+                        class="rounded-md border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-2 py-1 text-[11px] font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 cursor-pointer"
                       >
-                        Copy ID
+                        {t().requestDetail.copyId}
                       </button>
                       <DepartmentBadge department={d().department} />
                       <RequestStatusBadge status={d().status} />
-                      <span class="text-xs text-slate-400">· {d().seasonName}</span>
+                      <span class="text-xs text-slate-400 dark:text-slate-500">· {d().seasonName}</span>
                     </div>
 
                     {/* Visual 4-Step Lifecycle Progress */}
                     <Show
                       when={!d().status.endsWith("_archived")}
                       fallback={
-                        <div class="text-xs font-medium text-slate-500">
-                          Archived (
-                          {d().status === "denied_archived"
-                            ? "denied"
-                            : d().status === "withdrawn_archived"
-                              ? "withdrawn"
-                              : "order cancelled"}
-                          ) — kept permanently visible for team audit history.
+                        <div class="text-xs font-medium text-slate-500 dark:text-slate-400">
+                          {t().requestDetail.archivedNote(
+                            d().status === "denied_archived"
+                              ? "denied"
+                              : d().status === "withdrawn_archived"
+                                ? "withdrawn"
+                                : "order cancelled"
+                          )}
                         </div>
                       }
                     >
@@ -378,15 +387,15 @@ export default function RequestDetailPage() {
                               : d().status === "order"
                                 ? 3
                                 : 4;
-                        const steps = [
-                          { n: 1, label: "1. Review / Counter-Prop" },
-                          { n: 2, label: "2. Option Selection" },
-                          { n: 3, label: "3. Order (Provisional)" },
-                          { n: 4, label: "4. Invoiced Spending" }
+                        const steps = () => [
+                          { n: 1, label: t().requestDetail.steps.review },
+                          { n: 2, label: t().requestDetail.steps.selection },
+                          { n: 3, label: t().requestDetail.steps.order },
+                          { n: 4, label: t().requestDetail.steps.spending }
                         ];
                         return (
                           <div class="grid grid-cols-2 sm:grid-cols-4 gap-1.5 pt-1">
-                            <For each={steps}>
+                            <For each={steps()}>
                               {st => {
                                 const state = () =>
                                   stageIdx() > st.n
@@ -398,10 +407,10 @@ export default function RequestDetailPage() {
                                   <div
                                     class={`rounded-lg px-2.5 py-1.5 text-[11px] font-semibold border ${
                                       state() === "done"
-                                        ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                                        ? "border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-800/80 dark:bg-emerald-950/60 dark:text-emerald-300"
                                         : state() === "current"
-                                          ? "border-slate-900 bg-slate-900 text-white"
-                                          : "border-slate-200 bg-slate-50 text-slate-400"
+                                          ? "border-slate-900 bg-slate-900 text-white dark:border-red-500 dark:bg-red-600/20 dark:text-white"
+                                          : "border-slate-200 bg-slate-50 text-slate-400 dark:border-slate-800 dark:bg-slate-800/50 dark:text-slate-500"
                                     }`}
                                   >
                                     {st.label}
@@ -414,26 +423,28 @@ export default function RequestDetailPage() {
                       })()}
                     </Show>
 
-                    <h1 class="text-2xl font-extrabold text-slate-900">{d().title}</h1>
+                    <h1 class="text-2xl font-extrabold text-slate-900 dark:text-slate-100">{d().title}</h1>
 
                     <Show when={d().carSystem}>
-                      <div class="inline-flex items-center gap-1.5 rounded-lg bg-slate-100 border border-slate-200 px-2.5 py-1 text-xs font-semibold text-slate-700">
-                        <span class="text-slate-400 font-medium">Car System:</span>
+                      <div class="inline-flex items-center gap-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 px-2.5 py-1 text-xs font-semibold text-slate-700 dark:text-slate-200">
+                        <span class="text-slate-400 dark:text-slate-500 font-medium">{t().requestDetail.carSystemPrefix}</span>
                         <span>{d().carSystem}</span>
                       </div>
                     </Show>
 
-                    <div class="flex flex-wrap items-center gap-3 text-xs text-slate-500">
+                    <div class="flex flex-wrap items-center gap-3 text-xs text-slate-500 dark:text-slate-400">
                       <span class="inline-flex items-center gap-2">
                         <UserAvatar
                           name={d().creator.fullName}
                           avatarId={d().creator.avatarAttachmentId}
                           size="sm"
                         />
-                        <span class="font-medium text-slate-800">{d().creator.fullName}</span>
+                        <span class="font-medium text-slate-800 dark:text-slate-200">{d().creator.fullName}</span>
                         <span>({d().creator.title})</span>
                       </span>
-                      <span>· Created {formatDateTime(d().createdAt)}</span>
+                      <span>
+                        · {t().requestDetail.createdPrefix} {formatDateTime(d().createdAt, locale())}
+                      </span>
                     </div>
                   </div>
 
@@ -442,20 +453,20 @@ export default function RequestDetailPage() {
                       <button
                         type="button"
                         onClick={openEditModal}
-                        class="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer"
+                        class="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 cursor-pointer"
                       >
                         <Edit3 class="h-3.5 w-3.5" />
-                        Edit Request
+                        {t().requestDetail.editRequestBtn}
                       </button>
                     </Show>
                     <Show when={isMaster(app.user()?.role)}>
                       <button
                         type="button"
                         onClick={() => setMasterEditOpen(true)}
-                        class="inline-flex items-center gap-1.5 rounded-lg border border-slate-900 bg-slate-900 px-3 py-2 text-xs font-semibold text-white hover:bg-slate-800 cursor-pointer"
+                        class="inline-flex items-center gap-1.5 rounded-lg border border-slate-900 dark:border-slate-100 bg-slate-900 dark:bg-slate-100 px-3 py-2 text-xs font-semibold text-white dark:text-slate-950 hover:bg-slate-800 dark:hover:bg-white cursor-pointer"
                       >
                         <ShieldAlert class="h-3.5 w-3.5" />
-                        Master Edit (All Fields)
+                        {t().requestDetail.masterEditAllBtn}
                       </button>
                       <button
                         type="button"
@@ -465,24 +476,24 @@ export default function RequestDetailPage() {
                             id: d().id,
                             code: d().requestCode,
                             title: d().title,
-                            statusLabel: REQUEST_STATUS_LABELS[d().status],
+                            statusLabel: getRequestStatusLabel(locale(), d().status),
                             attachmentCount: d().attachments.length
                           })
                         }
-                        class="inline-flex items-center gap-1.5 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700 hover:bg-rose-100 cursor-pointer"
+                        class="inline-flex items-center gap-1.5 rounded-lg border border-rose-200 dark:border-rose-800/80 bg-rose-50 dark:bg-rose-950/60 px-3 py-2 text-xs font-semibold text-rose-700 dark:text-rose-300 hover:bg-rose-100 dark:hover:bg-rose-900/60 cursor-pointer"
                       >
                         <Trash2 class="h-3.5 w-3.5" />
-                        Delete
+                        {t().common.delete}
                       </button>
                     </Show>
                   </div>
                 </div>
 
-                <div class="rounded-xl bg-slate-50 border border-slate-100 p-4">
-                  <div class="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1.5">
-                    Explanation &amp; Justification
+                <div class="rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800 p-4">
+                  <div class="text-xs font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-1.5">
+                    {t().requestDetail.explanationHeading}
                   </div>
-                  <p class="text-sm text-slate-800 whitespace-pre-wrap leading-relaxed">
+                  <p class="text-sm text-slate-800 dark:text-slate-200 whitespace-pre-wrap leading-relaxed">
                     {d().explanation}
                   </p>
                 </div>
@@ -492,44 +503,46 @@ export default function RequestDetailPage() {
                   <div
                     class={`rounded-xl border p-4 grid sm:grid-cols-4 gap-4 ${
                       d().status === "spending"
-                        ? "border-emerald-200 bg-emerald-50/70"
-                        : "border-orange-200 bg-orange-50/70"
+                        ? "border-emerald-200 bg-emerald-50/70 dark:border-emerald-900/70 dark:bg-emerald-950/40"
+                        : "border-orange-200 bg-orange-50/70 dark:border-orange-900/70 dark:bg-orange-950/40"
                     }`}
                   >
                     <div>
-                      <div class="text-[11px] font-semibold uppercase text-slate-500">
-                        Selected Option Base
+                      <div class="text-[11px] font-semibold uppercase text-slate-500 dark:text-slate-400">
+                        {t().requestDetail.selectedOptionBase}
                       </div>
-                      <div class="text-base font-bold tabular-nums text-slate-900">
-                        {formatEur(d().selectedOptionPriceCents ?? 0)}
-                      </div>
-                    </div>
-                    <div>
-                      <div class="text-[11px] font-semibold uppercase text-slate-500">
-                        Shipping Charges
-                      </div>
-                      <div class="text-base font-bold tabular-nums text-slate-900">
-                        {formatEur(d().shippingCents)}
+                      <div class="text-base font-bold tabular-nums text-slate-900 dark:text-slate-100">
+                        {formatEur(d().selectedOptionPriceCents ?? 0, locale())}
                       </div>
                     </div>
                     <div>
-                      <div class="text-[11px] font-semibold uppercase text-slate-500">
-                        Import / Customs Fees
+                      <div class="text-[11px] font-semibold uppercase text-slate-500 dark:text-slate-400">
+                        {t().requestDetail.shippingCharges}
                       </div>
-                      <div class="text-base font-bold tabular-nums text-slate-900">
-                        {formatEur(d().importFeeCents)}
+                      <div class="text-base font-bold tabular-nums text-slate-900 dark:text-slate-100">
+                        {formatEur(d().shippingCents, locale())}
                       </div>
                     </div>
                     <div>
-                      <div class="text-[11px] font-semibold uppercase text-slate-500">
-                        {d().status === "spending" ? "Final Invoiced Cost" : "Provisional Total"}
+                      <div class="text-[11px] font-semibold uppercase text-slate-500 dark:text-slate-400">
+                        {t().requestDetail.importCustomsFees}
+                      </div>
+                      <div class="text-base font-bold tabular-nums text-slate-900 dark:text-slate-100">
+                        {formatEur(d().importFeeCents, locale())}
+                      </div>
+                    </div>
+                    <div>
+                      <div class="text-[11px] font-semibold uppercase text-slate-500 dark:text-slate-400">
+                        {d().status === "spending"
+                          ? t().requestDetail.finalInvoicedCost
+                          : t().requestDetail.provisionalTotal}
                       </div>
                       <div
                         class={`text-lg font-extrabold tabular-nums ${
-                          d().status === "spending" ? "text-emerald-800" : "text-orange-800"
+                          d().status === "spending" ? "text-emerald-800 dark:text-emerald-300" : "text-orange-800 dark:text-orange-300"
                         }`}
                       >
-                        {formatEur(d().effectiveTotalCents)}
+                        {formatEur(d().effectiveTotalCents, locale())}
                       </div>
                     </div>
                   </div>
@@ -538,11 +551,13 @@ export default function RequestDetailPage() {
 
               {/* Photos & Documents */}
               <div class="grid gap-6 lg:grid-cols-2">
-                <div class="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs space-y-3">
-                  <h2 class="text-sm font-bold text-slate-900">Photos ({photos().length})</h2>
+                <div class="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 shadow-xs space-y-3">
+                  <h2 class="text-sm font-bold text-slate-900 dark:text-slate-100">
+                    {t().requestDetail.photosHeading(photos().length)}
+                  </h2>
                   <Show
                     when={photos().length > 0}
-                    fallback={<p class="text-xs text-slate-400">No photos attached.</p>}
+                    fallback={<p class="text-xs text-slate-400 dark:text-slate-500">{t().requestDetail.noPhotos}</p>}
                   >
                     <div class="grid grid-cols-2 sm:grid-cols-3 gap-3">
                       <For each={photos()}>
@@ -550,7 +565,7 @@ export default function RequestDetailPage() {
                           <button
                             type="button"
                             onClick={() => setLightboxId(photo.id)}
-                            class="group relative aspect-square overflow-hidden rounded-xl border border-slate-200 bg-slate-100 cursor-pointer"
+                            class="group relative aspect-square overflow-hidden rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 cursor-pointer"
                           >
                             <img
                               src={`/api/files/${photo.id}?inline=1`}
@@ -564,27 +579,31 @@ export default function RequestDetailPage() {
                   </Show>
                 </div>
 
-                <div class="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs space-y-3">
-                  <h2 class="text-sm font-bold text-slate-900">
-                    Documents &amp; Invoices ({docs().length + invoices().length})
+                <div class="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 shadow-xs space-y-3">
+                  <h2 class="text-sm font-bold text-slate-900 dark:text-slate-100">
+                    {t().requestDetail.docsInvoicesHeading(docs().length + invoices().length)}
                   </h2>
                   <Show
                     when={docs().length + invoices().length > 0}
-                    fallback={<p class="text-xs text-slate-400">No documents attached.</p>}
+                    fallback={<p class="text-xs text-slate-400 dark:text-slate-500">{t().requestDetail.noDocs}</p>}
                   >
                     <div class="space-y-2">
                       <For each={invoices()}>
                         {inv => (
                           <a
                             href={`/api/files/${inv.id}`}
-                            class="flex items-center justify-between rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs hover:bg-emerald-100 transition-colors"
+                            download={inv.originalName}
+                            rel="external"
+                            class="flex items-center justify-between rounded-xl border border-emerald-200 dark:border-emerald-800/80 bg-emerald-50 dark:bg-emerald-950/60 px-3 py-2 text-xs hover:bg-emerald-100 dark:hover:bg-emerald-900/60 transition-colors"
                           >
-                            <span class="flex items-center gap-2 min-w-0 font-semibold text-emerald-900">
-                              <FileCheck2 class="h-4 w-4 shrink-0 text-emerald-700" />
-                              <span class="truncate">INVOICE: {inv.originalName}</span>
+                            <span class="flex items-center gap-2 min-w-0 font-semibold text-emerald-900 dark:text-emerald-200">
+                              <FileCheck2 class="h-4 w-4 shrink-0 text-emerald-700 dark:text-emerald-400" />
+                              <span class="truncate">
+                                {t().common.invoiceUpperPrefix} {inv.originalName}
+                              </span>
                             </span>
-                            <span class="shrink-0 inline-flex items-center gap-1 text-emerald-800">
-                              {formatBytes(inv.sizeBytes)}
+                            <span class="shrink-0 inline-flex items-center gap-1 text-emerald-800 dark:text-emerald-300">
+                              {formatBytes(inv.sizeBytes, locale())}
                               <Download class="h-3.5 w-3.5" />
                             </span>
                           </a>
@@ -594,17 +613,19 @@ export default function RequestDetailPage() {
                         {doc => (
                           <a
                             href={`/api/files/${doc.id}`}
-                            class="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs hover:bg-slate-100 transition-colors"
+                            download={doc.originalName}
+                            rel="external"
+                            class="flex items-center justify-between rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-3 py-2 text-xs hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
                           >
-                            <span class="flex items-center gap-2 min-w-0 font-medium text-slate-800">
-                              <FileText class="h-4 w-4 shrink-0 text-slate-500" />
+                            <span class="flex items-center gap-2 min-w-0 font-medium text-slate-800 dark:text-slate-200">
+                              <FileText class="h-4 w-4 shrink-0 text-slate-500 dark:text-slate-400" />
                               <span class="truncate">
-                                {doc.kind === "fee_proof" ? "[Fee Proof] " : ""}
+                                {doc.kind === "fee_proof" ? t().common.feeProofPrefix : ""}
                                 {doc.originalName}
                               </span>
                             </span>
-                            <span class="shrink-0 inline-flex items-center gap-1 text-slate-500">
-                              {formatBytes(doc.sizeBytes)}
+                            <span class="shrink-0 inline-flex items-center gap-1 text-slate-500 dark:text-slate-400">
+                              {formatBytes(doc.sizeBytes, locale())}
                               <Download class="h-3.5 w-3.5" />
                             </span>
                           </a>
@@ -616,12 +637,12 @@ export default function RequestDetailPage() {
               </div>
 
               {/* Buying Options */}
-              <div class="rounded-2xl border border-slate-200 bg-white p-6 shadow-xs space-y-4">
+              <div class="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 shadow-xs space-y-4">
                 <div class="flex items-center justify-between">
-                  <h2 class="text-base font-bold text-slate-900">
-                    Buying Options ({d().options.length})
+                  <h2 class="text-base font-bold text-slate-900 dark:text-slate-100">
+                    {t().requestDetail.buyingOptionsHeading(d().options.length)}
                   </h2>
-                  <span class="text-xs text-slate-400">All prices in EUR (TTC)</span>
+                  <span class="text-xs text-slate-400 dark:text-slate-500">{t().requestDetail.allPricesTtc}</span>
                 </div>
 
                 <div class="grid gap-4 md:grid-cols-2">
@@ -634,10 +655,10 @@ export default function RequestDetailPage() {
                         <div
                           class={`rounded-xl border p-4 space-y-2.5 transition-all ${
                             isSelectedOrderOpt()
-                              ? "border-emerald-500 bg-emerald-50/40 ring-1 ring-emerald-500"
+                              ? "border-emerald-500 bg-emerald-50/40 dark:bg-emerald-950/30 ring-1 ring-emerald-500"
                               : canActStage2() && isStage2Checked()
-                                ? "border-sky-500 bg-sky-50/40 ring-1 ring-sky-500"
-                                : "border-slate-200 bg-slate-50/60"
+                                ? "border-sky-500 bg-sky-50/40 dark:bg-sky-950/30 ring-1 ring-sky-500"
+                                : "border-slate-200 dark:border-slate-700 bg-slate-50/60 dark:bg-slate-800/50"
                           }`}
                         >
                           <div class="flex items-start justify-between gap-2">
@@ -652,32 +673,35 @@ export default function RequestDetailPage() {
                                 />
                               </Show>
                               <div>
-                                <span class="text-[11px] font-bold uppercase text-slate-400">
-                                  Option #{i() + 1}
+                                <span class="text-[11px] font-bold uppercase text-slate-400 dark:text-slate-500">
+                                  {t().requests.optionNumber(i() + 1)}
                                 </span>
-                                <h3 class="text-sm font-bold text-slate-900">{opt.label}</h3>
+                                <h3 class="text-sm font-bold text-slate-900 dark:text-slate-100">{opt.label}</h3>
                               </div>
                             </div>
-                            <span class="text-lg font-extrabold tabular-nums text-slate-900 shrink-0">
-                              {formatEur(opt.priceCents)}
+                            <span class="text-lg font-extrabold tabular-nums text-slate-900 dark:text-slate-100 shrink-0">
+                              {formatEur(opt.priceCents, locale())}
                             </span>
                           </div>
 
                           <Show when={isSelectedOrderOpt()}>
-                            <span class="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-800">
+                            <span class="inline-flex items-center gap-1 rounded-full bg-emerald-100 dark:bg-emerald-950/70 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-800 dark:text-emerald-300">
                               <CheckCircle2 class="h-3 w-3" />
-                              Confirmed Option
+                              {t().requestDetail.confirmedOption}
                             </span>
                           </Show>
 
-                          <div class="text-xs text-slate-700 bg-white rounded-lg border border-slate-200 p-2.5">
-                            <span class="font-semibold text-rose-700">Drawbacks: </span>
+                          <div class="text-xs text-slate-700 dark:text-slate-300 bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-700 p-2.5">
+                            <span class="font-semibold text-rose-700 dark:text-rose-400">
+                              {t().requestDetail.drawbacksPrefix}{" "}
+                            </span>
                             {opt.drawbacks}
                           </div>
 
                           <Show when={opt.notes}>
-                            <p class="text-xs text-slate-600">
-                              <span class="font-semibold">Notes:</span> {opt.notes}
+                            <p class="text-xs text-slate-600 dark:text-slate-400">
+                              <span class="font-semibold">{t().requestDetail.notesPrefix}</span>{" "}
+                              {opt.notes}
                             </p>
                           </Show>
 
@@ -686,9 +710,9 @@ export default function RequestDetailPage() {
                               href={opt.productUrl!}
                               target="_blank"
                               rel="noopener noreferrer"
-                              class="inline-flex items-center gap-1 text-xs font-semibold text-red-600 hover:underline"
+                              class="inline-flex items-center gap-1 text-xs font-semibold text-red-600 dark:text-red-400 hover:underline"
                             >
-                              Open product link
+                              {t().requestDetail.openProductLink}
                               <ExternalLink class="h-3 w-3" />
                             </a>
                           </Show>
@@ -703,8 +727,8 @@ export default function RequestDetailPage() {
 
               {/* Pre-Review Withdraw */}
               <Show when={canEditWithdraw()}>
-                <div class="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs space-y-3">
-                  <h3 class="text-sm font-bold text-slate-900">Withdraw Request (Before Review)</h3>
+                <div class="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 shadow-xs space-y-3">
+                  <h3 class="text-sm font-bold text-slate-900 dark:text-slate-100">{t().requestDetail.withdrawHeading}</h3>
                   <form action={withdrawRequestAction} method="post" class="flex flex-col sm:flex-row gap-3">
                     <input type="hidden" name="requestId" value={d().id} />
                     <input
@@ -712,28 +736,30 @@ export default function RequestDetailPage() {
                       name="reason"
                       value={withdrawReason()}
                       onInput={e => setWithdrawReason(e.currentTarget.value)}
-                      placeholder="Optional withdrawal reason..."
-                      class="flex-1 rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-red-500 focus:outline-none"
+                      placeholder={t().requestDetail.withdrawPlaceholder}
+                      class="flex-1 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:border-red-500 focus:outline-none"
                     />
                     <button
                       type="submit"
                       disabled={withdrawSub.pending}
-                      class="rounded-lg border border-rose-200 bg-rose-50 px-4 py-2 text-xs font-semibold text-rose-700 hover:bg-rose-100 cursor-pointer"
+                      class="rounded-lg border border-rose-200 dark:border-rose-800/80 bg-rose-50 dark:bg-rose-950/60 px-4 py-2 text-xs font-semibold text-rose-700 dark:text-rose-300 hover:bg-rose-100 dark:hover:bg-rose-900/60 cursor-pointer"
                     >
-                      {withdrawSub.pending ? "Withdrawing..." : "Withdraw & Archive"}
+                      {withdrawSub.pending
+                        ? t().requestDetail.withdrawingBtn
+                        : t().requestDetail.withdrawArchiveBtn}
                     </button>
                   </form>
                   <Show when={withdrawSub.result instanceof Error}>
-                    <p class="text-xs text-red-600">{(withdrawSub.result as Error).message}</p>
+                    <p class="text-xs text-red-600 dark:text-red-400">{(withdrawSub.result as Error).message}</p>
                   </Show>
                 </div>
               </Show>
 
               {/* Stage 1: Approver Review */}
               <Show when={canReviewStage1()}>
-                <div class="rounded-2xl border-2 border-slate-900 bg-white p-6 shadow-sm space-y-4">
-                  <h2 class="text-base font-bold text-slate-900">
-                    Approver Decision — Stage 1 Review
+                <div class="rounded-2xl border-2 border-slate-900 dark:border-red-500/80 bg-white dark:bg-slate-900 p-6 shadow-sm space-y-4">
+                  <h2 class="text-base font-bold text-slate-900 dark:text-slate-100">
+                    {t().requestDetail.stage1Heading}
                   </h2>
                   <DepartmentBudgetWarning
                     department={d().department}
@@ -743,8 +769,8 @@ export default function RequestDetailPage() {
                       d().options.length > 0 ? Math.min(...d().options.map(o => o.priceCents)) : 0
                     }
                   />
-                  <p class="text-xs text-slate-500">
-                    Approve to advance to Stage 2 option selection, counter-propose to negotiate with the requestor, or deny to archive immediately.
+                  <p class="text-xs text-slate-500 dark:text-slate-400">
+                    {t().requestDetail.stage1Subtitle}
                   </p>
                   <form action={reviewRequestAction} method="post" class="space-y-3">
                     <input type="hidden" name="requestId" value={d().id} />
@@ -754,11 +780,11 @@ export default function RequestDetailPage() {
                       rows={3}
                       value={reviewComment()}
                       onInput={e => setReviewComment(e.currentTarget.value)}
-                      placeholder="Write your approval note, counter-proposition terms, or reason for denial..."
-                      class="w-full rounded-lg border border-slate-300 px-3.5 py-2 text-sm focus:border-red-500 focus:outline-none"
+                      placeholder={t().requestDetail.stage1Placeholder}
+                      class="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3.5 py-2 text-sm text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:border-red-500 focus:outline-none"
                     />
                     <Show when={reviewSub.result instanceof Error}>
-                      <p class="text-xs text-red-600">{(reviewSub.result as Error).message}</p>
+                      <p class="text-xs text-red-600 dark:text-red-400">{(reviewSub.result as Error).message}</p>
                     </Show>
                     <div class="flex flex-wrap gap-2.5">
                       <button
@@ -768,7 +794,7 @@ export default function RequestDetailPage() {
                         disabled={reviewSub.pending}
                         class="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50 cursor-pointer"
                       >
-                        Approve to Stage 2
+                        {t().requestDetail.approveStage2Btn}
                       </button>
                       <button
                         type="submit"
@@ -777,7 +803,7 @@ export default function RequestDetailPage() {
                         disabled={reviewSub.pending}
                         class="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-50 cursor-pointer"
                       >
-                        Make Counter-Proposition
+                        {t().requestDetail.counterProposeBtn}
                       </button>
                       <button
                         type="submit"
@@ -786,7 +812,7 @@ export default function RequestDetailPage() {
                         disabled={reviewSub.pending}
                         class="rounded-lg bg-rose-600 px-4 py-2 text-sm font-semibold text-white hover:bg-rose-700 disabled:opacity-50 cursor-pointer"
                       >
-                        Deny &amp; Archive
+                        {t().requestDetail.denyArchiveBtn}
                       </button>
                     </div>
                   </form>
@@ -795,12 +821,12 @@ export default function RequestDetailPage() {
 
               {/* Requestor Counter-Proposition Response */}
               <Show when={canRespondCounter()}>
-                <div class="rounded-2xl border-2 border-indigo-600 bg-white p-6 shadow-sm space-y-4">
-                  <h2 class="text-base font-bold text-slate-900">
-                    Counter-Proposition Response Required
+                <div class="rounded-2xl border-2 border-indigo-600 dark:border-indigo-500 bg-white dark:bg-slate-900 p-6 shadow-sm space-y-4">
+                  <h2 class="text-base font-bold text-slate-900 dark:text-slate-100">
+                    {t().requestDetail.counterRespHeading}
                   </h2>
-                  <p class="text-xs text-slate-500">
-                    Accept to move to Stage 2 option selection, submit a counter-argument to send back to approvers, or deny to close and archive this request.
+                  <p class="text-xs text-slate-500 dark:text-slate-400">
+                    {t().requestDetail.counterRespSubtitle}
                   </p>
                   <form action={counterResponseAction} method="post" class="space-y-3">
                     <input type="hidden" name="requestId" value={d().id} />
@@ -809,11 +835,11 @@ export default function RequestDetailPage() {
                       rows={3}
                       value={counterComment()}
                       onInput={e => setCounterComment(e.currentTarget.value)}
-                      placeholder="Required for counter-argument; optional note when accepting or denying..."
-                      class="w-full rounded-lg border border-slate-300 px-3.5 py-2 text-sm focus:border-indigo-500 focus:outline-none"
+                      placeholder={t().requestDetail.counterRespPlaceholder}
+                      class="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3.5 py-2 text-sm text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:border-indigo-500 focus:outline-none"
                     />
                     <Show when={counterSub.result instanceof Error}>
-                      <p class="text-xs text-red-600">{(counterSub.result as Error).message}</p>
+                      <p class="text-xs text-red-600 dark:text-red-400">{(counterSub.result as Error).message}</p>
                     </Show>
                     <div class="flex flex-wrap gap-2.5">
                       <button
@@ -823,7 +849,7 @@ export default function RequestDetailPage() {
                         disabled={counterSub.pending}
                         class="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50 cursor-pointer"
                       >
-                        Accept Counter-Proposition
+                        {t().requestDetail.acceptCounterBtn}
                       </button>
                       <button
                         type="submit"
@@ -832,7 +858,7 @@ export default function RequestDetailPage() {
                         disabled={counterSub.pending}
                         class="rounded-lg bg-amber-600 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-700 disabled:opacity-50 cursor-pointer"
                       >
-                        Send Counter-Argument
+                        {t().requestDetail.sendCounterArgBtn}
                       </button>
                       <button
                         type="submit"
@@ -841,7 +867,7 @@ export default function RequestDetailPage() {
                         disabled={counterSub.pending}
                         class="rounded-lg bg-rose-600 px-4 py-2 text-sm font-semibold text-white hover:bg-rose-700 disabled:opacity-50 cursor-pointer"
                       >
-                        Deny &amp; Archive
+                        {t().requestDetail.denyArchiveBtn}
                       </button>
                     </div>
                   </form>
@@ -850,12 +876,14 @@ export default function RequestDetailPage() {
 
               {/* Stage 2: Select Option -> Order */}
               <Show when={canActStage2()}>
-                <div class="rounded-2xl border-2 border-sky-600 bg-white p-6 shadow-sm space-y-4">
-                  <h2 class="text-base font-bold text-slate-900">
-                    Stage 2 — Confirm Buying Option (Creates Provisional Order)
+                <div class="rounded-2xl border-2 border-sky-600 dark:border-sky-500 bg-white dark:bg-slate-900 p-6 shadow-sm space-y-4">
+                  <h2 class="text-base font-bold text-slate-900 dark:text-slate-100">
+                    {t().requestDetail.stage2Heading}
                   </h2>
-                  <p class="text-xs text-slate-500">
-                    Pick one of the initial options above and confirm to relabel this request as an <strong>Order</strong> in Provisional Spendings, or deny to archive.
+                  <p class="text-xs text-slate-500 dark:text-slate-400">
+                    {t().requestDetail.stage2SubtitlePrefix}{" "}
+                    <strong>{t().requestDetail.stage2OrderWord}</strong>{" "}
+                    {t().requestDetail.stage2SubtitleSuffix}
                   </p>
                   <DepartmentBudgetWarning
                     department={d().department}
@@ -873,11 +901,11 @@ export default function RequestDetailPage() {
                       rows={2}
                       value={stage2Comment()}
                       onInput={e => setStage2Comment(e.currentTarget.value)}
-                      placeholder="Order confirmation note (required if denying)..."
-                      class="w-full rounded-lg border border-slate-300 px-3.5 py-2 text-sm focus:border-sky-500 focus:outline-none"
+                      placeholder={t().requestDetail.stage2Placeholder}
+                      class="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3.5 py-2 text-sm text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:border-sky-500 focus:outline-none"
                     />
                     <Show when={stage2Sub.result instanceof Error}>
-                      <p class="text-xs text-red-600">{(stage2Sub.result as Error).message}</p>
+                      <p class="text-xs text-red-600 dark:text-red-400">{(stage2Sub.result as Error).message}</p>
                     </Show>
                     <div class="flex flex-wrap gap-2.5">
                       <button
@@ -887,7 +915,7 @@ export default function RequestDetailPage() {
                         disabled={stage2Sub.pending || !selectedOptId()}
                         class="rounded-lg bg-sky-600 px-4 py-2 text-sm font-semibold text-white hover:bg-sky-700 disabled:opacity-50 cursor-pointer"
                       >
-                        Confirm Selected Option as Order
+                        {t().requestDetail.confirmOptionBtn}
                       </button>
                       <button
                         type="submit"
@@ -896,7 +924,7 @@ export default function RequestDetailPage() {
                         disabled={stage2Sub.pending}
                         class="rounded-lg bg-rose-600 px-4 py-2 text-sm font-semibold text-white hover:bg-rose-700 disabled:opacity-50 cursor-pointer"
                       >
-                        Deny &amp; Archive
+                        {t().requestDetail.denyArchiveBtn}
                       </button>
                     </div>
                   </form>
@@ -909,36 +937,36 @@ export default function RequestDetailPage() {
                   {/* Supplemental Fees */}
                   <form
                     onSubmit={submitFeesUpdate}
-                    class="rounded-2xl border border-orange-300 bg-white p-6 shadow-xs space-y-4"
+                    class="rounded-2xl border border-orange-300 dark:border-orange-800/80 bg-white dark:bg-slate-900 p-6 shadow-xs space-y-4"
                   >
                     <div class="flex items-center gap-2">
-                      <Package class="h-5 w-5 text-orange-600" />
-                      <h3 class="text-base font-bold text-slate-900">
-                        Supplemental Shipping &amp; Import Fees
+                      <Package class="h-5 w-5 text-orange-600 dark:text-orange-400" />
+                      <h3 class="text-base font-bold text-slate-900 dark:text-slate-100">
+                        {t().requestDetail.feesHeading}
                       </h3>
                     </div>
 
                     <div class="grid grid-cols-2 gap-3">
                       <div>
-                        <label class="block text-xs font-semibold text-slate-600 mb-1">
-                          Shipping (EUR)
+                        <label class="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1">
+                          {t().requestDetail.shippingEurLabel}
                         </label>
                         <input
                           type="text"
                           value={shippingEur()}
                           onInput={e => setShippingEur(e.currentTarget.value)}
-                          class="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm tabular-nums focus:border-orange-500 focus:outline-none"
+                          class="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 tabular-nums focus:border-orange-500 focus:outline-none"
                         />
                       </div>
                       <div>
-                        <label class="block text-xs font-semibold text-slate-600 mb-1">
-                          Import / Customs (EUR)
+                        <label class="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1">
+                          {t().requestDetail.importEurLabel}
                         </label>
                         <input
                           type="text"
                           value={importFeeEur()}
                           onInput={e => setImportFeeEur(e.currentTarget.value)}
-                          class="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm tabular-nums focus:border-orange-500 focus:outline-none"
+                          class="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 tabular-nums focus:border-orange-500 focus:outline-none"
                         />
                       </div>
                     </div>
@@ -947,16 +975,16 @@ export default function RequestDetailPage() {
                       type="text"
                       value={feeComment()}
                       onInput={e => setFeeComment(e.currentTarget.value)}
-                      placeholder="Optional note about shipping/customs charges..."
-                      class="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-orange-500 focus:outline-none"
+                      placeholder={t().requestDetail.feeCommentPlaceholder}
+                      class="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:border-orange-500 focus:outline-none"
                     />
 
-                    <label class="flex items-center gap-2 rounded-lg border border-dashed border-slate-300 bg-slate-50 px-3 py-2 text-xs text-slate-600 cursor-pointer">
+                    <label class="flex items-center gap-2 rounded-lg border border-dashed border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60 px-3 py-2 text-xs text-slate-600 dark:text-slate-300 cursor-pointer">
                       <Upload class="h-4 w-4" />
                       <span>
                         {feeProofFiles().length > 0
-                          ? `${feeProofFiles().length} proof file(s) selected`
-                          : "Attach shipping/customs proof (optional)"}
+                          ? t().requestDetail.feeProofsSelected(feeProofFiles().length)
+                          : t().requestDetail.attachFeeProof}
                       </span>
                       <input
                         type="file"
@@ -971,10 +999,10 @@ export default function RequestDetailPage() {
                     </label>
 
                     <Show when={feeErr()}>
-                      <p class="text-xs text-red-600">{feeErr()}</p>
+                      <p class="text-xs text-red-600 dark:text-red-400">{feeErr()}</p>
                     </Show>
                     <Show when={feeMsg()}>
-                      <p class="text-xs text-emerald-700">{feeMsg()}</p>
+                      <p class="text-xs text-emerald-700 dark:text-emerald-400">{feeMsg()}</p>
                     </Show>
 
                     <button
@@ -982,29 +1010,29 @@ export default function RequestDetailPage() {
                       disabled={feeBusy()}
                       class="w-full rounded-lg bg-orange-600 py-2 text-sm font-semibold text-white hover:bg-orange-700 disabled:opacity-50 cursor-pointer"
                     >
-                      {feeBusy() ? "Updating..." : "Save Supplemental Charges"}
+                      {feeBusy() ? t().requestDetail.updatingFeesBtn : t().requestDetail.saveFeesBtn}
                     </button>
                   </form>
 
                   {/* Upload Invoice -> Final Spending */}
                   <form
                     onSubmit={submitInvoiceUpload}
-                    class="rounded-2xl border border-emerald-300 bg-white p-6 shadow-xs space-y-4"
+                    class="rounded-2xl border border-emerald-300 dark:border-emerald-800/80 bg-white dark:bg-slate-900 p-6 shadow-xs space-y-4"
                   >
                     <div class="flex items-center gap-2">
-                      <Receipt class="h-5 w-5 text-emerald-600" />
-                      <h3 class="text-base font-bold text-slate-900">
-                        Upload Invoice (Finalize Spending)
+                      <Receipt class="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
+                      <h3 class="text-base font-bold text-slate-900 dark:text-slate-100">
+                        {t().requestDetail.invoiceHeading}
                       </h3>
                     </div>
-                    <p class="text-xs text-slate-500">
-                      Uploading the final invoice moves this order out of Provisional Spendings and counts it into the Final Budget.
+                    <p class="text-xs text-slate-500 dark:text-slate-400">
+                      {t().requestDetail.invoiceSubtitle}
                     </p>
 
-                    <label class="flex items-center gap-2 rounded-lg border border-dashed border-emerald-400 bg-emerald-50/50 px-3.5 py-3 text-xs font-medium text-emerald-900 cursor-pointer">
-                      <Upload class="h-4 w-4 text-emerald-600" />
+                    <label class="flex items-center gap-2 rounded-lg border border-dashed border-emerald-400 dark:border-emerald-800 bg-emerald-50/50 dark:bg-emerald-950/50 px-3.5 py-3 text-xs font-medium text-emerald-900 dark:text-emerald-200 cursor-pointer">
+                      <Upload class="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
                       <span class="truncate">
-                        {invoiceFile() ? invoiceFile()!.name : "Select invoice file (PDF / image)..."}
+                        {invoiceFile() ? invoiceFile()!.name : t().requestDetail.selectInvoicePrompt}
                       </span>
                       <input
                         type="file"
@@ -1016,15 +1044,15 @@ export default function RequestDetailPage() {
                     </label>
 
                     <div>
-                      <label class="block text-xs font-semibold text-slate-600 mb-1">
-                        Final Invoiced Amount (EUR TTC — adjust if bill differs)
+                      <label class="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1">
+                        {t().requestDetail.finalAmountLabel}
                       </label>
                       <input
                         type="text"
                         required
                         value={finalAmountEur()}
                         onInput={e => setFinalAmountEur(e.currentTarget.value)}
-                        class="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm tabular-nums focus:border-emerald-500 focus:outline-none"
+                        class="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 tabular-nums focus:border-emerald-500 focus:outline-none"
                       />
                     </div>
 
@@ -1032,12 +1060,12 @@ export default function RequestDetailPage() {
                       type="text"
                       value={invoiceComment()}
                       onInput={e => setInvoiceComment(e.currentTarget.value)}
-                      placeholder="Optional invoice reference / note..."
-                      class="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-emerald-500 focus:outline-none"
+                      placeholder={t().requestDetail.invoiceCommentPlaceholder}
+                      class="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:border-emerald-500 focus:outline-none"
                     />
 
                     <Show when={invErr()}>
-                      <p class="text-xs text-red-600">{invErr()}</p>
+                      <p class="text-xs text-red-600 dark:text-red-400">{invErr()}</p>
                     </Show>
 
                     <button
@@ -1045,15 +1073,15 @@ export default function RequestDetailPage() {
                       disabled={invBusy()}
                       class="w-full rounded-lg bg-emerald-600 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50 cursor-pointer"
                     >
-                      {invBusy() ? "Finalizing Spending..." : "Upload Invoice & Mark as Spending"}
+                      {invBusy() ? t().requestDetail.finalizingBtn : t().requestDetail.uploadInvoiceBtn}
                     </button>
                   </form>
 
                   {/* Cancel Order */}
-                  <div class="lg:col-span-2 rounded-2xl border border-slate-200 bg-white p-5 shadow-xs space-y-3">
-                    <h3 class="text-sm font-bold text-slate-900 flex items-center gap-2">
-                      <XCircle class="h-4 w-4 text-rose-600" />
-                      Cancel Active Order
+                  <div class="lg:col-span-2 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 shadow-xs space-y-3">
+                    <h3 class="text-sm font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
+                      <XCircle class="h-4 w-4 text-rose-600 dark:text-rose-400" />
+                      {t().requestDetail.cancelOrderHeading}
                     </h3>
                     <form action={cancelOrderAction} method="post" class="flex flex-col sm:flex-row gap-3">
                       <input type="hidden" name="requestId" value={d().id} />
@@ -1063,37 +1091,39 @@ export default function RequestDetailPage() {
                         required
                         value={cancelOrderReason()}
                         onInput={e => setCancelOrderReason(e.currentTarget.value)}
-                        placeholder="Reason for cancelling (e.g. supplier out of stock, order cancelled)..."
-                        class="flex-1 rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-rose-500 focus:outline-none"
+                        placeholder={t().requestDetail.cancelOrderPlaceholder}
+                        class="flex-1 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:border-rose-500 focus:outline-none"
                       />
                       <button
                         type="submit"
                         disabled={cancelOrderSub.pending}
                         class="rounded-lg bg-rose-600 px-4 py-2 text-xs font-semibold text-white hover:bg-rose-700 cursor-pointer"
                       >
-                        {cancelOrderSub.pending ? "Cancelling..." : "Cancel Order & Remove from Provisional"}
+                        {cancelOrderSub.pending
+                          ? t().requestDetail.cancellingOrderBtn
+                          : t().requestDetail.cancelOrderBtn}
                       </button>
                     </form>
                     <Show when={cancelOrderSub.result instanceof Error}>
-                      <p class="text-xs text-red-600">{(cancelOrderSub.result as Error).message}</p>
+                      <p class="text-xs text-red-600 dark:text-red-400">{(cancelOrderSub.result as Error).message}</p>
                     </Show>
                   </div>
                 </div>
               </Show>
 
               {/* Timeline & Team Discussion */}
-              <div class="rounded-2xl border border-slate-200 bg-white p-6 shadow-xs space-y-5">
+              <div class="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 shadow-xs space-y-5">
                 <div class="flex items-center gap-2">
-                  <MessageSquare class="h-5 w-5 text-slate-600" />
-                  <h2 class="text-base font-bold text-slate-900">
-                    Negotiation History &amp; Activity Timeline
+                  <MessageSquare class="h-5 w-5 text-slate-600 dark:text-slate-400" />
+                  <h2 class="text-base font-bold text-slate-900 dark:text-slate-100">
+                    {t().requestDetail.timelineHeading}
                   </h2>
                 </div>
 
                 <div class="space-y-4">
                   <For each={d().timeline}>
                     {entry => (
-                      <div class="flex gap-3 border-l-2 border-slate-200 pl-4 py-1">
+                      <div class="flex gap-3 border-l-2 border-slate-200 dark:border-slate-700 pl-4 py-1">
                         <UserAvatar
                           name={entry.actorName}
                           avatarId={entry.actorAvatarId}
@@ -1101,23 +1131,24 @@ export default function RequestDetailPage() {
                         />
                         <div class="flex-1 min-w-0 space-y-1">
                           <div class="flex flex-wrap items-center gap-2 text-xs">
-                            <span class="font-bold text-slate-900">{entry.actorName}</span>
-                            <span class="text-slate-400">{entry.actorTitle}</span>
+                            <span class="font-bold text-slate-900 dark:text-slate-100">{entry.actorName}</span>
+                            <span class="text-slate-400 dark:text-slate-500">{entry.actorTitle}</span>
                             <RoleBadge role={entry.actorRole} />
                             <span
+                              title={entry.eventType}
                               class={`rounded px-1.5 py-0.5 font-mono text-[10px] font-semibold ${
                                 entry.eventType === "master_edited"
-                                  ? "bg-red-50 text-red-700 border border-red-200"
-                                  : "bg-slate-100 text-slate-600"
+                                  ? "bg-red-50 text-red-700 border border-red-200 dark:bg-red-950/60 dark:text-red-300 dark:border-red-800/80"
+                                  : "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300"
                               }`}
                             >
-                              {entry.eventType}
+                              {getTimelineEventLabel(locale(), entry.eventType)}
                             </span>
-                            <span class="text-slate-400 ml-auto">
-                              {formatDateTime(entry.createdAt)}
+                            <span class="text-slate-400 dark:text-slate-500 ml-auto">
+                              {formatDateTime(entry.createdAt, locale())}
                             </span>
                           </div>
-                          <p class="text-sm text-slate-800 whitespace-pre-wrap">{entry.comment}</p>
+                          <p class="text-sm text-slate-800 dark:text-slate-200 whitespace-pre-wrap">{entry.comment}</p>
                         </div>
                       </div>
                     )}
@@ -1129,7 +1160,7 @@ export default function RequestDetailPage() {
                     action={postCommentAction}
                     method="post"
                     onSubmit={() => setTimeout(() => setDiscussionText(""), 50)}
-                    class="pt-4 border-t border-slate-100 flex flex-col sm:flex-row gap-3"
+                    class="pt-4 border-t border-slate-100 dark:border-slate-800 flex flex-col sm:flex-row gap-3"
                   >
                     <input type="hidden" name="requestId" value={d().id} />
                     <input
@@ -1138,15 +1169,17 @@ export default function RequestDetailPage() {
                       required
                       value={discussionText()}
                       onInput={e => setDiscussionText(e.currentTarget.value)}
-                      placeholder="Add a discussion comment on this request..."
-                      class="flex-1 rounded-lg border border-slate-200 px-3.5 py-2 text-sm focus:border-red-500 focus:outline-none"
+                      placeholder={t().requestDetail.commentPlaceholder}
+                      class="flex-1 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 px-3.5 py-2 text-sm text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:border-red-500 focus:outline-none"
                     />
                     <button
                       type="submit"
                       disabled={commentSub.pending}
-                      class="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-50 cursor-pointer"
+                      class="rounded-lg bg-slate-900 dark:bg-slate-100 px-4 py-2 text-sm font-semibold text-white dark:text-slate-950 hover:bg-slate-800 dark:hover:bg-white disabled:opacity-50 cursor-pointer"
                     >
-                      {commentSub.pending ? "Posting..." : "Post Comment"}
+                      {commentSub.pending
+                        ? t().requestDetail.postingBtn
+                        : t().requestDetail.postCommentBtn}
                     </button>
                   </form>
                 </Show>
@@ -1162,23 +1195,25 @@ export default function RequestDetailPage() {
                     <div class="relative max-w-4xl max-h-[90vh]" onClick={e => e.stopPropagation()}>
                       <img
                         src={`/api/files/${attId()}?inline=1`}
-                        alt="Full resolution preview"
+                        alt={t().requestDetail.fullPreviewAlt}
                         class="max-h-[85vh] rounded-xl shadow-2xl object-contain"
                       />
                       <div class="mt-3 flex justify-between items-center text-xs text-white">
                         <a
                           href={`/api/files/${attId()}`}
+                          download={photos().find(p => p.id === attId())?.originalName ?? ""}
+                          rel="external"
                           class="inline-flex items-center gap-1.5 rounded-lg bg-white/15 px-3 py-1.5 hover:bg-white/25"
                         >
                           <Download class="h-3.5 w-3.5" />
-                          Download Original
+                          {t().common.downloadOriginal}
                         </a>
                         <button
                           type="button"
                           onClick={() => setLightboxId(null)}
                           class="rounded-lg bg-white/15 px-3 py-1.5 hover:bg-white/25 cursor-pointer"
                         >
-                          Close
+                          {t().common.close}
                         </button>
                       </div>
                     </div>
@@ -1188,32 +1223,34 @@ export default function RequestDetailPage() {
 
               {/* Edit Unreviewed Request Modal */}
               <Show when={editOpen()}>
-                <div class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 p-4 overflow-y-auto">
+                <div class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 dark:bg-black/75 p-4 overflow-y-auto">
                   <form
                     onSubmit={submitPreReviewEdit}
-                    class="w-full max-w-2xl rounded-2xl bg-white p-6 shadow-2xl space-y-4 my-8 max-h-[90vh] overflow-y-auto"
+                    class="w-full max-w-2xl rounded-2xl border border-transparent dark:border-slate-800 bg-white dark:bg-slate-900 p-6 shadow-2xl space-y-4 my-8 max-h-[90vh] overflow-y-auto"
                   >
                     <div class="flex items-center justify-between">
-                      <h3 class="text-lg font-bold text-slate-900">
-                        Edit Request {d().requestCode}
+                      <h3 class="text-lg font-bold text-slate-900 dark:text-slate-100">
+                        {t().requestDetail.editModalHeading(d().requestCode)}
                       </h3>
                       <button
                         type="button"
                         onClick={() => setEditOpen(false)}
-                        class="text-xs font-semibold text-slate-500 hover:text-slate-900 cursor-pointer"
+                        class="text-xs font-semibold text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 cursor-pointer"
                       >
-                        Close
+                        {t().common.close}
                       </button>
                     </div>
 
                     <div>
-                      <label class="block text-xs font-semibold text-slate-600 mb-1">Title</label>
+                      <label class="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1">
+                        {t().common.title}
+                      </label>
                       <input
                         type="text"
                         required
                         value={editTitle()}
                         onInput={e => setEditTitle(e.currentTarget.value)}
-                        class="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                        class="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 focus:border-red-500 focus:outline-none"
                       />
                     </div>
 
@@ -1225,21 +1262,23 @@ export default function RequestDetailPage() {
                     />
 
                     <div>
-                      <label class="block text-xs font-semibold text-slate-600 mb-1">
-                        Explanation
+                      <label class="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1">
+                        {t().common.explanation}
                       </label>
                       <textarea
                         required
                         rows={3}
                         value={editExplanation()}
                         onInput={e => setEditExplanation(e.currentTarget.value)}
-                        class="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                        class="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 focus:border-red-500 focus:outline-none"
                       />
                     </div>
 
                     <div class="space-y-2">
                       <div class="flex items-center justify-between">
-                        <span class="text-xs font-semibold text-slate-600">Options</span>
+                        <span class="text-xs font-semibold text-slate-600 dark:text-slate-400">
+                          {t().requestDetail.editModalOptions}
+                        </span>
                         <button
                           type="button"
                           onClick={() =>
@@ -1248,25 +1287,25 @@ export default function RequestDetailPage() {
                               { label: "", productUrl: "", priceEur: "", drawbacks: "", notes: "" }
                             ])
                           }
-                          class="inline-flex items-center gap-1 text-xs font-semibold text-red-600 cursor-pointer"
+                          class="inline-flex items-center gap-1 text-xs font-semibold text-red-600 dark:text-red-400 cursor-pointer"
                         >
-                          <Plus class="h-3.5 w-3.5" /> Add Option
+                          <Plus class="h-3.5 w-3.5" /> {t().requests.addOptionBtn}
                         </button>
                       </div>
                       <For each={editOptions()}>
                         {(opt, i) => (
-                          <div class="rounded-lg border border-slate-200 p-3 space-y-2 bg-slate-50">
+                          <div class="rounded-lg border border-slate-200 dark:border-slate-700 p-3 space-y-2 bg-slate-50 dark:bg-slate-800/60">
                             <div class="flex justify-between items-center text-xs">
-                              <span class="font-bold">Option #{i() + 1}</span>
+                              <span class="font-bold text-slate-800 dark:text-slate-200">{t().requests.optionNumber(i() + 1)}</span>
                               <Show when={editOptions().length > 1}>
                                 <button
                                   type="button"
                                   onClick={() =>
                                     setEditOptions(prev => prev.filter((_, idx) => idx !== i()))
                                   }
-                                  class="text-rose-600 inline-flex items-center gap-1 cursor-pointer"
+                                  class="text-rose-600 dark:text-rose-400 inline-flex items-center gap-1 cursor-pointer"
                                 >
-                                  <Trash2 class="h-3 w-3" /> Remove
+                                  <Trash2 class="h-3 w-3" /> {t().common.remove}
                                 </button>
                               </Show>
                             </div>
@@ -1275,7 +1314,7 @@ export default function RequestDetailPage() {
                                 type="text"
                                 required
                                 value={opt.label}
-                                placeholder="Supplier / Label"
+                                placeholder={t().requestDetail.editModalSupplierPlaceholder}
                                 onInput={e =>
                                   setEditOptions(prev =>
                                     prev.map((x, idx) =>
@@ -1283,13 +1322,13 @@ export default function RequestDetailPage() {
                                     )
                                   )
                                 }
-                                class="col-span-2 rounded border border-slate-200 bg-white px-2.5 py-1.5 text-xs"
+                                class="col-span-2 rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 px-2.5 py-1.5 text-xs text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500"
                               />
                               <input
                                 type="text"
                                 required
                                 value={opt.priceEur}
-                                placeholder="Price EUR"
+                                placeholder={t().requestDetail.editModalPricePlaceholder}
                                 onInput={e =>
                                   setEditOptions(prev =>
                                     prev.map((x, idx) =>
@@ -1297,14 +1336,14 @@ export default function RequestDetailPage() {
                                     )
                                   )
                                 }
-                                class="rounded border border-slate-200 bg-white px-2.5 py-1.5 text-xs tabular-nums"
+                                class="rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 px-2.5 py-1.5 text-xs text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 tabular-nums"
                               />
                             </div>
                             <input
                               type="text"
                               required
                               value={opt.drawbacks}
-                              placeholder="Drawbacks"
+                              placeholder={t().requestDetail.editModalDrawbacksPlaceholder}
                               onInput={e =>
                                 setEditOptions(prev =>
                                   prev.map((x, idx) =>
@@ -1312,13 +1351,13 @@ export default function RequestDetailPage() {
                                   )
                                 )
                               }
-                              class="w-full rounded border border-slate-200 bg-white px-2.5 py-1.5 text-xs"
+                              class="w-full rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 px-2.5 py-1.5 text-xs text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500"
                             />
                             <div class="grid grid-cols-2 gap-2">
                               <input
                                 type="url"
                                 value={opt.productUrl}
-                                placeholder="https://... (optional)"
+                                placeholder={t().requestDetail.editModalUrlPlaceholder}
                                 onInput={e =>
                                   setEditOptions(prev =>
                                     prev.map((x, idx) =>
@@ -1326,12 +1365,12 @@ export default function RequestDetailPage() {
                                     )
                                   )
                                 }
-                                class="rounded border border-slate-200 bg-white px-2.5 py-1.5 text-xs"
+                                class="rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 px-2.5 py-1.5 text-xs text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500"
                               />
                               <input
                                 type="text"
                                 value={opt.notes}
-                                placeholder="Notes (optional)"
+                                placeholder={t().requestDetail.editModalNotesPlaceholder}
                                 onInput={e =>
                                   setEditOptions(prev =>
                                     prev.map((x, idx) =>
@@ -1339,7 +1378,7 @@ export default function RequestDetailPage() {
                                     )
                                   )
                                 }
-                                class="rounded border border-slate-200 bg-white px-2.5 py-1.5 text-xs"
+                                class="rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 px-2.5 py-1.5 text-xs text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500"
                               />
                             </div>
                           </div>
@@ -1349,13 +1388,13 @@ export default function RequestDetailPage() {
 
                     <Show when={d().attachments.length > 0}>
                       <div class="space-y-1">
-                        <span class="text-xs font-semibold text-slate-600">
-                          Existing Attachments (check to remove)
+                        <span class="text-xs font-semibold text-slate-600 dark:text-slate-400">
+                          {t().requestDetail.editModalAttachments}
                         </span>
                         <div class="space-y-1">
                           <For each={d().attachments}>
                             {att => (
-                              <label class="flex items-center gap-2 text-xs text-slate-700">
+                              <label class="flex items-center gap-2 text-xs text-slate-700 dark:text-slate-300">
                                 <input
                                   type="checkbox"
                                   checked={editRemoveIds().includes(att.id)}
@@ -1367,7 +1406,7 @@ export default function RequestDetailPage() {
                                   }}
                                 />
                                 <span>
-                                  [{att.kind}] {att.originalName}
+                                  [{getAttachmentKindLabel(locale(), att.kind)}] {att.originalName}
                                 </span>
                               </label>
                             )}
@@ -1377,8 +1416,10 @@ export default function RequestDetailPage() {
                     </Show>
 
                     <div class="grid sm:grid-cols-2 gap-3 text-xs">
-                      <label class="block rounded-lg border border-dashed border-slate-300 p-3 cursor-pointer">
-                        <span class="font-semibold block mb-1">Add Photos</span>
+                      <label class="block rounded-lg border border-dashed border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60 p-3 text-slate-700 dark:text-slate-300 cursor-pointer">
+                        <span class="font-semibold block mb-1">
+                          {t().requestDetail.editModalAddPhotos}
+                        </span>
                         <input
                           type="file"
                           multiple
@@ -1390,8 +1431,10 @@ export default function RequestDetailPage() {
                           }
                         />
                       </label>
-                      <label class="block rounded-lg border border-dashed border-slate-300 p-3 cursor-pointer">
-                        <span class="font-semibold block mb-1">Add Documents</span>
+                      <label class="block rounded-lg border border-dashed border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60 p-3 text-slate-700 dark:text-slate-300 cursor-pointer">
+                        <span class="font-semibold block mb-1">
+                          {t().requestDetail.editModalAddDocs}
+                        </span>
                         <input
                           type="file"
                           multiple
@@ -1405,23 +1448,23 @@ export default function RequestDetailPage() {
                     </div>
 
                     <Show when={editErr()}>
-                      <p class="text-xs text-red-600">{editErr()}</p>
+                      <p class="text-xs text-red-600 dark:text-red-400">{editErr()}</p>
                     </Show>
 
                     <div class="flex justify-end gap-2 pt-2">
                       <button
                         type="button"
                         onClick={() => setEditOpen(false)}
-                        class="rounded-lg border border-slate-200 px-4 py-2 text-xs font-semibold text-slate-700 cursor-pointer"
+                        class="rounded-lg border border-slate-200 dark:border-slate-700 px-4 py-2 text-xs font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer"
                       >
-                        Cancel
+                        {t().common.cancel}
                       </button>
                       <button
                         type="submit"
                         disabled={editBusy()}
                         class="rounded-lg bg-red-600 px-4 py-2 text-xs font-semibold text-white hover:bg-red-700 disabled:opacity-50 cursor-pointer"
                       >
-                        {editBusy() ? "Saving..." : "Save Changes"}
+                        {editBusy() ? t().common.saving : t().common.saveChanges}
                       </button>
                     </div>
                   </form>

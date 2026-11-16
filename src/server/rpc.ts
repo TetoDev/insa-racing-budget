@@ -1,11 +1,13 @@
 import { action, query, redirect } from "@solidjs/router";
-import { getRequestHeaders, getRequestIP } from "@solidjs/start/http";
+import { getCookie, getRequestHeaders, getRequestIP } from "@solidjs/start/http";
 import type {
   AssignableRole,
   DepartmentId,
   RatePeriod,
   RequestStatus
 } from "~/lib/constants";
+import { getDictionary, LOCALE_COOKIE_NAME, normalizeLocale } from "~/lib/i18n";
+import { normalizeTheme, THEME_COOKIE_NAME } from "~/lib/theme";
 import {
   createSeasonSchema,
   forgotPasswordSchema,
@@ -71,13 +73,15 @@ function isPublicPath(pathname: string): boolean {
 
 export const queryAppContext = query(async (pathname: string) => {
   "use server";
+  const locale = normalizeLocale(getCookie(LOCALE_COOKIE_NAME));
+  const theme = normalizeTheme(getCookie(THEME_COOKIE_NAME));
   const user = await getCurrentUser();
   if (!user) {
     if (!isPublicPath(pathname)) {
       const next = pathname && pathname !== "/" ? `?redirect=${encodeURIComponent(pathname)}` : "";
       throw redirect(`/login${next}`);
     }
-    return { user: null, seasons: [] };
+    return { user: null, seasons: [], locale, theme };
   }
 
   if (pathname === "/login") {
@@ -85,34 +89,33 @@ export const queryAppContext = query(async (pathname: string) => {
   }
 
   const seasons = await listAllSeasons();
-  return { user, seasons };
+  return { user, seasons, locale, theme };
 }, "app-context");
 
 export const loginFormAction = action(async (formData: FormData) => {
   "use server";
+  const msg = getDictionary(normalizeLocale(getCookie(LOCALE_COOKIE_NAME))).serverErrors;
   const rawEmail = String(formData.get("email") ?? "");
   const rawPassword = String(formData.get("password") ?? "");
   const redirectTarget = String(formData.get("redirect") ?? "/");
 
   const parsed = loginSchema.safeParse({ email: rawEmail, password: rawPassword });
   if (!parsed.success) {
-    return new Error(parsed.error.issues[0]?.message ?? "Invalid login credentials.");
+    return new Error(msg.invalidCredentials);
   }
 
   const clientIp = getRpcClientIp();
   const limitKey = `login:${clientIp}:${parsed.data.email.toLowerCase()}`;
   const rate = consumeRateLimit(limitKey, 15, FIFTEEN_MINUTES_MS);
   if (!rate.allowed) {
-    return new Error(
-      `Too many sign-in attempts. Please wait ${Math.ceil(rate.retryAfterSeconds / 60)} minute(s) before trying again.`
-    );
+    return new Error(msg.tooManySignIns(Math.ceil(rate.retryAfterSeconds / 60)));
   }
 
   try {
     await authenticateWithPassword(parsed.data.email, parsed.data.password);
     resetRateLimit(limitKey);
   } catch (err) {
-    return err instanceof Error ? err : new Error("Authentication failed.");
+    return err instanceof Error ? err : new Error(msg.authFailed);
   }
 
   const safeDest =
@@ -128,11 +131,12 @@ export const logoutAction = action(async () => {
 
 export const forgotPasswordAction = action(async (formData: FormData) => {
   "use server";
+  const msg = getDictionary(normalizeLocale(getCookie(LOCALE_COOKIE_NAME))).serverErrors;
   const parsed = forgotPasswordSchema.safeParse({
     email: String(formData.get("email") ?? "")
   });
   if (!parsed.success) {
-    return new Error(parsed.error.issues[0]?.message ?? "Valid email is required.");
+    return new Error(msg.validEmailRequired);
   }
 
   const clientIp = getRpcClientIp();
@@ -143,7 +147,7 @@ export const forgotPasswordAction = action(async (formData: FormData) => {
     FIFTEEN_MINUTES_MS
   );
   if (!ipLimit.allowed || !emailLimit.allowed) {
-    return new Error("Too many password reset requests. Please wait 15 minutes before retrying.");
+    return new Error(msg.tooManyResetRequests);
   }
 
   try {
@@ -153,32 +157,32 @@ export const forgotPasswordAction = action(async (formData: FormData) => {
   }
   return {
     ok: true,
-    message:
-      "If that email belongs to an active member account, a password reset link has been sent from contact@insa-racing.fr."
+    message: msg.forgotSentMessage
   };
 });
 
 export const resetPasswordAction = action(async (formData: FormData) => {
   "use server";
+  const msg = getDictionary(normalizeLocale(getCookie(LOCALE_COOKIE_NAME))).serverErrors;
   const parsed = resetPasswordSchema.safeParse({
     token: String(formData.get("token") ?? ""),
     password: String(formData.get("password") ?? "")
   });
   if (!parsed.success) {
-    return new Error(parsed.error.issues[0]?.message ?? "Invalid password reset submission.");
+    return new Error(msg.invalidResetSubmission);
   }
 
   const clientIp = getRpcClientIp();
   const rate = consumeRateLimit(`reset:${clientIp}`, 15, FIFTEEN_MINUTES_MS);
   if (!rate.allowed) {
-    return new Error("Too many password reset attempts. Please wait 15 minutes before retrying.");
+    return new Error(msg.tooManyResetAttempts);
   }
 
   try {
     await completePasswordReset(parsed.data.token, parsed.data.password);
     return { ok: true };
   } catch (err) {
-    return err instanceof Error ? err : new Error("Failed to reset password.");
+    return err instanceof Error ? err : new Error(msg.failedResetPassword);
   }
 });
 

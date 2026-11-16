@@ -20,7 +20,7 @@ export default function App() {
             <Suspense
               fallback={
                 <div class="min-h-screen bg-slate-950 flex items-center justify-center text-sm text-slate-400">
-                  Loading INSA Racing workspace...
+                  INSA Racing — Achats &amp; Budget...
                 </div>
               }
             >
@@ -28,7 +28,7 @@ export default function App() {
                 <Suspense
                   fallback={
                     <div class="flex items-center justify-center py-20 text-sm text-slate-400">
-                      Loading INSA Racing workspace...
+                      INSA Racing — Achats &amp; Budget...
                     </div>
                   }
                 >

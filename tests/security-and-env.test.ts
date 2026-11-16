@@ -1,3 +1,5 @@
+import fs from "node:fs";
+import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { assertSameOrigin } from "~/server/api-helpers";
 import { getEnv } from "~/server/env";
@@ -110,5 +112,68 @@ describe("production env validation, CSRF origin checks & rate limiter", () => {
     // Explicit reset unlocks immediately
     resetRateLimit("login:test");
     expect(consumeRateLimit("login:test", 2, 60_000, t0 + 60_002).remaining).toBe(1);
+  });
+
+  it("marks every /api/files anchor download link with rel=external and download to bypass SolidJS Router SPA navigation", () => {
+    const roots = [
+      path.resolve(process.cwd(), "src/routes"),
+      path.resolve(process.cwd(), "src/components")
+    ];
+    const files: string[] = [];
+    const walk = (dir: string) => {
+      for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+        const full = path.join(dir, entry.name);
+        if (entry.isDirectory()) walk(full);
+        else if (entry.name.endsWith(".tsx")) files.push(full);
+      }
+    };
+    roots.forEach(walk);
+
+    const extractOpenAnchorTags = (src: string): string[] => {
+      const tags: string[] = [];
+      let idx = 0;
+      while ((idx = src.indexOf("<a", idx)) !== -1) {
+        const nextChar = src[idx + 2] ?? "";
+        if (!/[\s>]/.test(nextChar)) {
+          idx += 2;
+          continue;
+        }
+        let braceDepth = 0;
+        let quote: string | null = null;
+        let end = idx + 2;
+        while (end < src.length) {
+          const ch = src[end];
+          if (quote) {
+            if (ch === "\\" && end + 1 < src.length) end += 2;
+            else {
+              if (ch === quote) quote = null;
+              end++;
+            }
+          } else {
+            if (ch === '"' || ch === "'" || ch === "`") quote = ch;
+            else if (ch === "{") braceDepth++;
+            else if (ch === "}") braceDepth = Math.max(0, braceDepth - 1);
+            else if (ch === ">" && braceDepth === 0) break;
+            end++;
+          }
+        }
+        tags.push(src.slice(idx, end + 1));
+        idx = end + 1;
+      }
+      return tags;
+    };
+
+    let checkedLinks = 0;
+    for (const file of files) {
+      const content = fs.readFileSync(file, "utf8");
+      for (const tag of extractOpenAnchorTags(content)) {
+        if (tag.includes("/api/files/")) {
+          checkedLinks++;
+          expect(tag, `Missing rel="external" in ${file}: ${tag}`).toContain('rel="external"');
+          expect(tag, `Missing download attribute in ${file}: ${tag}`).toMatch(/\bdownload\b/);
+        }
+      }
+    }
+    expect(checkedLinks).toBeGreaterThanOrEqual(6);
   });
 });

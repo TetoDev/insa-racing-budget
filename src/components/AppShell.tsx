@@ -17,19 +17,23 @@ import {
   X
 } from "lucide-solid";
 import { For, Show, createSignal, type ParentProps } from "solid-js";
+import { getSeasonStatusLabel } from "~/lib/i18n";
 import {
   canCreateRequest,
   canExportBudget,
   canManageUsersAndSeasons
 } from "~/lib/permissions";
-import { useApp } from "./AppContext";
+import { useApp, useI18n } from "./AppContext";
 import { RoleBadge, UserAvatar } from "./Badges";
+import { LanguageSwitcher } from "./LanguageSwitcher";
+import { ThemeSwitcher } from "./ThemeSwitcher";
 
 const AUTH_PAGES = ["/login", "/forgot-password", "/reset-password", "/accept-invite"];
 
 export function AppShell(props: ParentProps) {
   const location = useLocation();
   const app = useApp();
+  const { locale, t } = useI18n();
   const [mobileOpen, setMobileOpen] = createSignal(false);
 
   const isAuthPage = () =>
@@ -42,22 +46,23 @@ export function AppShell(props: ParentProps) {
 
   const navItems = () => {
     const role = app.user()?.role;
+    const tr = t().nav;
     return [
-      { href: "/", label: "Overview", icon: LayoutDashboard, show: true },
-      { href: "/requests", label: "Purchase Requests", icon: ClipboardList, show: true },
-      { href: "/orders", label: "Orders (Provisional)", icon: PackageCheck, show: true },
-      { href: "/spendings", label: "Final Spendings", icon: Receipt, show: true },
-      { href: "/budget", label: "Budget & Analytics", icon: BarChart3, show: true },
-      { href: "/logs", label: "Global Audit Log", icon: Activity, show: true },
+      { href: "/", label: tr.overview, icon: LayoutDashboard, show: true },
+      { href: "/requests", label: tr.requests, icon: ClipboardList, show: true },
+      { href: "/orders", label: tr.orders, icon: PackageCheck, show: true },
+      { href: "/spendings", label: tr.spendings, icon: Receipt, show: true },
+      { href: "/budget", label: tr.budget, icon: BarChart3, show: true },
+      { href: "/logs", label: tr.logs, icon: Activity, show: true },
       {
         href: "/exports",
-        label: "Export Declarations",
+        label: tr.exports,
         icon: Download,
         show: canExportBudget(role)
       },
       {
         href: "/admin",
-        label: "Master Admin",
+        label: tr.admin,
         icon: ShieldCheck,
         show: canManageUsersAndSeasons(role)
       }
@@ -67,9 +72,16 @@ export function AppShell(props: ParentProps) {
   return (
     <Show
       when={!isAuthPage()}
-      fallback={<div class="min-h-screen bg-slate-950">{props.children}</div>}
+      fallback={
+        <div class="relative min-h-screen bg-slate-950">
+          <div class="fixed top-4 right-4 z-50">
+            <LanguageSwitcher variant="dark" />
+          </div>
+          {props.children}
+        </div>
+      }
     >
-      <div class="min-h-screen bg-slate-50 text-slate-900 flex">
+      <div class="min-h-screen bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100 flex">
         {/* Mobile sidebar backdrop */}
         <Show when={mobileOpen()}>
           <div
@@ -91,7 +103,7 @@ export function AppShell(props: ParentProps) {
               </div>
               <div>
                 <div class="text-sm font-bold tracking-tight text-white">INSA RACING</div>
-                <div class="text-[11px] font-medium text-slate-400">Achats &amp; Budget</div>
+                <div class="text-[11px] font-medium text-slate-400">{t().common.brandSubtitle}</div>
               </div>
             </A>
             <button
@@ -150,11 +162,11 @@ export function AppShell(props: ParentProps) {
                   <form action={app.logout} method="post">
                     <button
                       type="submit"
-                      class="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium text-slate-400 hover:bg-slate-900 hover:text-white transition-colors"
-                      title="Sign out"
+                      class="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium text-slate-400 hover:bg-slate-900 hover:text-white transition-colors cursor-pointer"
+                      title={t().shell.signOut}
                     >
                       <LogOut class="h-3.5 w-3.5" />
-                      Sign out
+                      {t().shell.signOut}
                     </button>
                   </form>
                 </div>
@@ -165,11 +177,11 @@ export function AppShell(props: ParentProps) {
 
         {/* Main Content Area */}
         <div class="flex-1 flex flex-col min-w-0">
-          <header class="sticky top-0 z-30 h-16 bg-white/95 backdrop-blur border-b border-slate-200 px-4 sm:px-6 flex items-center justify-between gap-4">
+          <header class="sticky top-0 z-30 h-16 bg-white/95 dark:bg-slate-900/95 backdrop-blur border-b border-slate-200 dark:border-slate-800 px-4 sm:px-6 flex items-center justify-between gap-4">
             <div class="flex items-center gap-3 min-w-0">
               <button
                 type="button"
-                class="lg:hidden rounded-lg border border-slate-200 p-2 text-slate-600 hover:bg-slate-100"
+                class="lg:hidden rounded-lg border border-slate-200 dark:border-slate-700 p-2 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
                 onClick={() => setMobileOpen(true)}
               >
                 <Menu class="h-5 w-5" />
@@ -178,56 +190,58 @@ export function AppShell(props: ParentProps) {
               {/* Season Switcher */}
               <Show when={app.seasons().length > 0}>
                 <div class="flex items-center gap-2 min-w-0">
-                  <label class="text-xs font-semibold uppercase tracking-wider text-slate-400 hidden sm:inline">
-                    Season
+                  <label class="text-xs font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500 hidden sm:inline">
+                    {t().common.season}
                   </label>
                   <select
                     value={app.selectedSeasonId()}
                     onChange={e => app.setSelectedSeasonId(e.currentTarget.value)}
-                    class="rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-sm font-semibold text-slate-800 focus:border-red-500 focus:outline-none max-w-[230px] sm:max-w-xs"
+                    class="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 px-3 py-1.5 text-sm font-semibold text-slate-800 dark:text-slate-100 focus:border-red-500 focus:outline-none max-w-[230px] sm:max-w-xs"
                   >
                     <For each={app.seasons()}>
                       {season => (
                         <option value={season.id}>
-                          {season.name} ({season.status === "active" ? "Active" : "Archived"})
+                          {season.name} ({getSeasonStatusLabel(locale(), season.status)})
                         </option>
                       )}
                     </For>
                   </select>
                   <Show when={app.isViewingArchived()}>
-                    <span class="hidden md:inline-flex items-center gap-1 rounded-full bg-slate-200 px-2.5 py-0.5 text-xs font-semibold text-slate-700">
+                    <span class="hidden md:inline-flex items-center gap-1 rounded-full bg-slate-200 dark:bg-slate-800 px-2.5 py-0.5 text-xs font-semibold text-slate-700 dark:text-slate-300">
                       <Archive class="h-3 w-3" />
-                      Read-Only Archive
+                      {t().shell.readOnlyArchive}
                     </span>
                   </Show>
                 </div>
               </Show>
             </div>
 
-            <div class="flex items-center gap-2.5">
+            <div class="flex items-center gap-2 sm:gap-2.5">
+              <ThemeSwitcher compact />
+              <LanguageSwitcher compact />
               <Show when={canCreateRequest(app.user()?.role) && !app.isViewingArchived()}>
                 <A
                   href="/requests/new"
                   class="inline-flex items-center gap-1.5 rounded-lg bg-red-600 px-3.5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-red-700 transition-colors"
                 >
                   <PlusCircle class="h-4 w-4" />
-                  <span class="hidden sm:inline">New Request</span>
-                  <span class="sm:hidden">Request</span>
+                  <span class="hidden sm:inline">{t().shell.newRequest}</span>
+                  <span class="sm:hidden">{t().shell.newRequestShort}</span>
                 </A>
               </Show>
               <A
                 href="/profile"
-                class="inline-flex items-center gap-2 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100"
+                class="inline-flex items-center gap-2 rounded-lg border border-slate-200 dark:border-slate-700 px-2.5 py-1.5 text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800"
               >
                 <UserIcon class="h-3.5 w-3.5" />
-                <span class="hidden md:inline">Profile</span>
+                <span class="hidden md:inline">{t().shell.profile}</span>
               </A>
             </div>
           </header>
 
           <Show when={app.isViewingArchived()}>
-            <div class="bg-amber-50 border-b border-amber-200 px-4 sm:px-6 py-2 text-xs font-medium text-amber-900">
-              You are viewing an archived season ({app.selectedSeason()?.name}). All requests, orders, and entries are locked read-only; switch back to the active season to submit or modify records.
+            <div class="bg-amber-50 dark:bg-amber-950/60 border-b border-amber-200 dark:border-amber-900/70 px-4 sm:px-6 py-2 text-xs font-medium text-amber-900 dark:text-amber-200">
+              {t().shell.archivedBanner(app.selectedSeason()?.name ?? "")}
             </div>
           </Show>
 

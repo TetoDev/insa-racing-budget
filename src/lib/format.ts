@@ -1,13 +1,23 @@
-const eurFormatter = new Intl.NumberFormat("fr-FR", {
-  style: "currency",
-  currency: "EUR",
-  minimumFractionDigits: 2,
-  maximumFractionDigits: 2
-});
+import type { Locale } from "./i18n/types";
 
-export function formatEur(cents: number): string {
+const eurFormatters: Record<Locale, Intl.NumberFormat> = {
+  en: new Intl.NumberFormat("en-IE", {
+    style: "currency",
+    currency: "EUR",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  }),
+  fr: new Intl.NumberFormat("fr-FR", {
+    style: "currency",
+    currency: "EUR",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  })
+};
+
+export function formatEur(cents: number, locale: Locale = "fr"): string {
   const normalized = Number.isFinite(cents) ? Math.round(cents) : 0;
-  return eurFormatter.format(normalized / 100);
+  return (eurFormatters[locale] ?? eurFormatters.fr).format(normalized / 100);
 }
 
 export function formatCentsPlain(cents: number): string {
@@ -45,22 +55,28 @@ export function parseEurToCents(
   return cents;
 }
 
-export function formatDate(isoOrDate: string | Date | null | undefined): string {
+export function formatDate(
+  isoOrDate: string | Date | null | undefined,
+  locale: Locale = "en"
+): string {
   if (!isoOrDate) return "—";
   const d = typeof isoOrDate === "string" ? new Date(isoOrDate) : isoOrDate;
   if (Number.isNaN(d.getTime())) return "—";
-  return new Intl.DateTimeFormat("fr-FR", {
+  return new Intl.DateTimeFormat(locale === "fr" ? "fr-FR" : "en-GB", {
     year: "numeric",
     month: "short",
     day: "2-digit"
   }).format(d);
 }
 
-export function formatDateTime(isoOrDate: string | Date | null | undefined): string {
+export function formatDateTime(
+  isoOrDate: string | Date | null | undefined,
+  locale: Locale = "en"
+): string {
   if (!isoOrDate) return "—";
   const d = typeof isoOrDate === "string" ? new Date(isoOrDate) : isoOrDate;
   if (Number.isNaN(d.getTime())) return "—";
-  return new Intl.DateTimeFormat("fr-FR", {
+  return new Intl.DateTimeFormat(locale === "fr" ? "fr-FR" : "en-GB", {
     year: "numeric",
     month: "short",
     day: "2-digit",
@@ -69,10 +85,10 @@ export function formatDateTime(isoOrDate: string | Date | null | undefined): str
   }).format(d);
 }
 
-export function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+export function formatBytes(bytes: number, locale: Locale = "en"): string {
+  if (bytes < 1024) return `${bytes} ${locale === "fr" ? "o" : "B"}`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} ${locale === "fr" ? "Ko" : "KB"}`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} ${locale === "fr" ? "Mo" : "MB"}`;
 }
 
 export function slugifyFilename(input: string, maxLen = 40): string {

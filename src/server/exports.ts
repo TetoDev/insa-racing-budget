@@ -6,7 +6,6 @@ import {
   BUDGET_SECTIONS,
   DEPARTMENT_MAP,
   ENTRY_CATEGORY_MAP,
-  ENTRY_STATUS_LABELS,
   type BudgetSectionId,
   type RatePeriod
 } from "~/lib/constants";
@@ -16,6 +15,18 @@ import {
   formatEur,
   slugifyFilename
 } from "~/lib/format";
+import {
+  formatCarSystemDisplay,
+  formatTimeBucketLabel,
+  getDepartmentLabel,
+  getDictionary,
+  getEntryCategoryLabel,
+  getEntryStatusLabel,
+  getRatePeriodLabel,
+  getSeasonStatusLabel,
+  normalizeLocale,
+  type Locale
+} from "~/lib/i18n";
 import { getSeasonBudgetSnapshot } from "./budget";
 import { readStoredFile } from "./storage";
 
@@ -28,6 +39,7 @@ export interface ExportRequestParams {
   fromDate?: string;
   toDate?: string;
   ratePeriod: RatePeriod;
+  locale?: Locale;
 }
 
 type BudgetSnapshot = Awaited<ReturnType<typeof getSeasonBudgetSnapshot>>;
@@ -54,50 +66,83 @@ function buildCsvLines(
 
 function getSectionTabularData(
   sectionId: BudgetSectionId,
-  snapshot: BudgetSnapshot
+  snapshot: BudgetSnapshot,
+  locale: Locale = "en"
 ): { title: string; headers: string[]; rows: Array<Array<string | number>>; eurCols?: number[] } {
   const { season, analytics, spendings, provisionalSpendings, entries } = snapshot;
+  const exp = getDictionary(locale).exportReport;
+  const periodUnitLabel =
+    locale === "en"
+      ? analytics.rates.periodUnit
+      : getRatePeriodLabel(locale, analytics.rates.periodUnit, "noun").toLowerCase();
+  const formatPeriodBucket = (bucketKey: string, fallback: string) =>
+    locale === "en"
+      ? fallback
+      : formatTimeBucketLabel(bucketKey, fallback, analytics.rates.periodUnit, locale);
 
   switch (sectionId) {
     case "summary":
       return {
-        title: "Dashboard & Summary",
-        headers: ["Metric", "Value (EUR)", "Count / Notes"],
+        title: exp.summary.title,
+        headers: [...exp.summary.headers],
         eurCols: [2],
         rows: [
-          ["Season Name", season.name, `${season.startDate} -> ${season.deadlineDate}`],
-          ["Opening Balance", formatCentsPlain(analytics.openingBalanceCents), season.status],
-          ["Confirmed Money Entries", formatCentsPlain(analytics.confirmedEntriesCents), `${analytics.counts.confirmedEntries} confirmed`],
-          ["Provisional Money Entries", formatCentsPlain(analytics.provisionalEntriesCents), `${analytics.counts.provisionalEntries} provisional`],
-          ["Final Spendings (Invoiced)", formatCentsPlain(analytics.finalSpendingsCents), `${analytics.counts.finalSpendings} invoiced`],
-          ["Provisional Spendings (Orders)", formatCentsPlain(analytics.provisionalSpendingsCents), `${analytics.counts.activeOrders} active orders`],
-          ["Actual Cash Left", formatCentsPlain(analytics.actualCashLeftCents), "Opening + Confirmed Entries - Final Spendings"],
-          ["Projected Balance", formatCentsPlain(analytics.projectedBalanceCents), "Includes Provisional Entries & Orders"],
-          ["Open Requests (Review / Counter / Stage 2)", "", `${analytics.counts.pendingReview + analytics.counts.counterProposed + analytics.counts.optionSelection} pending`]
+          [exp.summary.rowSeasonName, season.name, `${season.startDate} -> ${season.deadlineDate}`],
+          [
+            exp.summary.rowOpeningBalance,
+            formatCentsPlain(analytics.openingBalanceCents),
+            locale === "en" ? season.status : getSeasonStatusLabel(locale, season.status)
+          ],
+          [
+            exp.summary.rowConfirmedEntries,
+            formatCentsPlain(analytics.confirmedEntriesCents),
+            exp.summary.rowConfirmedCount(analytics.counts.confirmedEntries)
+          ],
+          [
+            exp.summary.rowProvisionalEntries,
+            formatCentsPlain(analytics.provisionalEntriesCents),
+            exp.summary.rowProvisionalCount(analytics.counts.provisionalEntries)
+          ],
+          [
+            exp.summary.rowFinalSpendings,
+            formatCentsPlain(analytics.finalSpendingsCents),
+            exp.summary.rowInvoicedCount(analytics.counts.finalSpendings)
+          ],
+          [
+            exp.summary.rowProvisionalSpendings,
+            formatCentsPlain(analytics.provisionalSpendingsCents),
+            exp.summary.rowActiveOrdersCount(analytics.counts.activeOrders)
+          ],
+          [
+            exp.summary.rowActualCashLeft,
+            formatCentsPlain(analytics.actualCashLeftCents),
+            exp.summary.rowActualCashNote
+          ],
+          [
+            exp.summary.rowProjectedBalance,
+            formatCentsPlain(analytics.projectedBalanceCents),
+            exp.summary.rowProjectedNote
+          ],
+          [
+            exp.summary.rowOpenRequests,
+            "",
+            exp.summary.rowPendingCount(
+              analytics.counts.pendingReview +
+                analytics.counts.counterProposed +
+                analytics.counts.optionSelection
+            )
+          ]
         ]
       };
 
     case "by_department":
       return {
-        title: "Spendings by Department",
-        headers: [
-          "Code",
-          "Department",
-          "Allocated Budget (EUR)",
-          "Final Spendings (EUR)",
-          "Provisional Spendings (EUR)",
-          "Projected Total (EUR)",
-          "Remaining Projected (EUR)",
-          "Utilization Projected (%)",
-          "Share Final (%)",
-          "Invoiced Count",
-          "Active Orders",
-          "Open Requests"
-        ],
+        title: exp.byDepartment.title,
+        headers: [...exp.byDepartment.headers],
         eurCols: [3, 4, 5, 6, 7],
         rows: analytics.byDepartment.map(d => [
           d.code,
-          d.label,
+          getDepartmentLabel(locale, d.department),
           d.allocatedCents !== null ? formatCentsPlain(d.allocatedCents) : "—",
           formatCentsPlain(d.finalSpendingsCents),
           formatCentsPlain(d.provisionalSpendingsCents),
@@ -113,18 +158,11 @@ function getSectionTabularData(
 
     case "by_timeframe":
       return {
-        title: `Spendings by Timeframe (${analytics.rates.periodUnit})`,
-        headers: [
-          "Period",
-          "Final Spendings (EUR)",
-          "Provisional Spendings (EUR)",
-          "Confirmed Entries (EUR)",
-          "Provisional Entries (EUR)",
-          "Net Actual (EUR)"
-        ],
+        title: exp.byTimeframe.title(periodUnitLabel),
+        headers: [...exp.byTimeframe.headers],
         eurCols: [2, 3, 4, 5, 6],
         rows: analytics.timeSeries.map(t => [
-          t.label,
+          formatPeriodBucket(t.bucketKey, t.label),
           formatCentsPlain(t.finalSpendingsCents),
           formatCentsPlain(t.provisionalSpendingsCents),
           formatCentsPlain(t.confirmedEntriesCents),
@@ -135,27 +173,13 @@ function getSectionTabularData(
 
     case "all_spendings":
       return {
-        title: "All Spendings (Final Invoiced)",
-        headers: [
-          "Request ID",
-          "Department",
-          "Car System / Part",
-          "Title",
-          "Chosen Option",
-          "Base Option (EUR)",
-          "Shipping (EUR)",
-          "Import Fees (EUR)",
-          "Final Invoiced (EUR)",
-          "Invoice Date",
-          "Requestor",
-          "Invoiced By",
-          "Invoice Files"
-        ],
+        title: exp.allSpendings.title,
+        headers: [...exp.allSpendings.headers],
         eurCols: [6, 7, 8, 9],
         rows: spendings.map(s => [
           s.requestCode,
-          DEPARTMENT_MAP[s.department].label,
-          s.carSystem || "—",
+          getDepartmentLabel(locale, s.department),
+          s.carSystem ? formatCarSystemDisplay(s.carSystem, locale) : "—",
           s.title,
           s.chosenOptionLabel,
           formatCentsPlain(s.basePriceCents),
@@ -174,26 +198,13 @@ function getSectionTabularData(
 
     case "provisional_spendings":
       return {
-        title: "Provisional Spendings (Active Orders)",
-        headers: [
-          "Request ID",
-          "Department",
-          "Car System / Part",
-          "Title",
-          "Chosen Option",
-          "Base Option (EUR)",
-          "Shipping (EUR)",
-          "Import Fees (EUR)",
-          "Provisional Total (EUR)",
-          "Ordered Date",
-          "Requestor",
-          "Ordered By"
-        ],
+        title: exp.provisionalSpendings.title,
+        headers: [...exp.provisionalSpendings.headers],
         eurCols: [6, 7, 8, 9],
         rows: provisionalSpendings.map(o => [
           o.requestCode,
-          DEPARTMENT_MAP[o.department].label,
-          o.carSystem || "—",
+          getDepartmentLabel(locale, o.department),
+          o.carSystem ? formatCarSystemDisplay(o.carSystem, locale) : "—",
           o.title,
           o.chosenOptionLabel,
           formatCentsPlain(o.basePriceCents),
@@ -208,22 +219,14 @@ function getSectionTabularData(
 
     case "provisional_entries":
       return {
-        title: "Provisional Entries",
-        headers: [
-          "Entry ID",
-          "Category",
-          "Title",
-          "Expected Amount (EUR)",
-          "Entry Date",
-          "Logged By",
-          "Comment"
-        ],
+        title: exp.provisionalEntries.title,
+        headers: [...exp.provisionalEntries.headers],
         eurCols: [4],
         rows: entries
           .filter(e => e.status === "provisional")
           .map(e => [
             e.entryCode,
-            ENTRY_CATEGORY_MAP[e.category].label,
+            getEntryCategoryLabel(locale, e.category),
             e.title,
             formatCentsPlain(e.initialAmountCents),
             e.entryDate,
@@ -234,25 +237,13 @@ function getSectionTabularData(
 
     case "all_entries":
       return {
-        title: "All Money Entries",
-        headers: [
-          "Entry ID",
-          "Status",
-          "Category",
-          "Title",
-          "Initial Amount (EUR)",
-          "Final Amount (EUR)",
-          "Entry Date",
-          "Confirmed Date",
-          "Logged By",
-          "Confirmed By",
-          "Comment"
-        ],
+        title: exp.allEntries.title,
+        headers: [...exp.allEntries.headers],
         eurCols: [5, 6],
         rows: entries.map(e => [
           e.entryCode,
-          ENTRY_STATUS_LABELS[e.status],
-          ENTRY_CATEGORY_MAP[e.category].label,
+          getEntryStatusLabel(locale, e.status),
+          getEntryCategoryLabel(locale, e.category),
           e.title,
           formatCentsPlain(e.initialAmountCents),
           formatCentsPlain(e.effectiveAmountCents),
@@ -266,19 +257,11 @@ function getSectionTabularData(
 
     case "entries_by_category":
       return {
-        title: "Entries by Category",
-        headers: [
-          "Category",
-          "Confirmed Entries (EUR)",
-          "Provisional Entries (EUR)",
-          "Projected Total (EUR)",
-          "Share Confirmed (%)",
-          "Confirmed Count",
-          "Provisional Count"
-        ],
+        title: exp.entriesByCategory.title,
+        headers: [...exp.entriesByCategory.headers],
         eurCols: [2, 3, 4],
         rows: analytics.byCategory.map(c => [
-          c.label,
+          getEntryCategoryLabel(locale, c.category),
           formatCentsPlain(c.confirmedCents),
           formatCentsPlain(c.provisionalCents),
           formatCentsPlain(c.totalProjectedCents),
@@ -290,27 +273,20 @@ function getSectionTabularData(
 
     case "cashflow_rates":
       return {
-        title: `Money Left & Cashflow Rates (${analytics.rates.periodUnit})`,
-        headers: [
-          "Period",
-          "Confirmed Inflow (EUR)",
-          "Final Outflow (EUR)",
-          "Net Actual Flow (EUR)",
-          "Cumulative Actual Balance (EUR)",
-          "Cumulative Projected Balance (EUR)"
-        ],
+        title: exp.cashflowRates.title(periodUnitLabel),
+        headers: [...exp.cashflowRates.headers],
         eurCols: [2, 3, 4, 5, 6],
         rows: [
           [
-            `SUMMARY (${analytics.rates.periodCount} ${analytics.rates.periodUnit}s)`,
-            formatCentsPlain(analytics.rates.actualInputPerPeriodCents) + "/p",
-            formatCentsPlain(analytics.rates.actualOutputPerPeriodCents) + "/p",
-            formatCentsPlain(analytics.rates.actualNetPerPeriodCents) + "/p",
+            exp.cashflowRates.summaryRowLabel(analytics.rates.periodCount, periodUnitLabel),
+            formatCentsPlain(analytics.rates.actualInputPerPeriodCents) + exp.cashflowRates.perPeriodSuffix,
+            formatCentsPlain(analytics.rates.actualOutputPerPeriodCents) + exp.cashflowRates.perPeriodSuffix,
+            formatCentsPlain(analytics.rates.actualNetPerPeriodCents) + exp.cashflowRates.perPeriodSuffix,
             formatCentsPlain(analytics.actualCashLeftCents),
             formatCentsPlain(analytics.projectedBalanceCents)
           ],
           ...analytics.timeSeries.map(t => [
-            t.label,
+            formatPeriodBucket(t.bucketKey, t.label),
             formatCentsPlain(t.confirmedEntriesCents),
             formatCentsPlain(t.finalSpendingsCents),
             formatCentsPlain(t.netActualCents),
@@ -324,21 +300,23 @@ function getSectionTabularData(
 
 async function generateXlsxBuffer(
   snapshot: BudgetSnapshot,
-  sections: BudgetSectionId[]
+  sections: BudgetSectionId[],
+  locale: Locale = "en"
 ): Promise<Buffer> {
   const wb = new ExcelJS.Workbook();
+  const exp = getDictionary(locale).exportReport;
   wb.creator = "INSA Racing Achats";
   wb.created = new Date();
 
   for (const sectionId of sections) {
-    const data = getSectionTabularData(sectionId, snapshot);
+    const data = getSectionTabularData(sectionId, snapshot, locale);
     const sheetName = data.title
       .replace(/[\\/*?:[\]]/g, "")
       .slice(0, 31);
     const ws = wb.addWorksheet(sheetName);
 
     ws.addRow([`INSA Racing — ${snapshot.season.name} (${snapshot.season.yearCode})`]);
-    ws.addRow([data.title, `Generated: ${new Date().toISOString().slice(0, 10)}`]);
+    ws.addRow([data.title, exp.xlsxGenerated(formatDate(new Date(), locale))]);
     ws.addRow([]);
 
     ws.getRow(1).font = { bold: true, size: 13 };
@@ -392,11 +370,12 @@ async function generateXlsxBuffer(
 function generateCsvFiles(
   snapshot: BudgetSnapshot,
   sections: BudgetSectionId[],
-  delimiter: string
+  delimiter: string,
+  locale: Locale = "en"
 ): Array<{ filename: string; content: Buffer }> {
   const BOM = "\uFEFF";
   return sections.map(sectionId => {
-    const data = getSectionTabularData(sectionId, snapshot);
+    const data = getSectionTabularData(sectionId, snapshot, locale);
     const csv = BOM + buildCsvLines(data.headers, data.rows, delimiter);
     return {
       filename: `${slugifyFilename(snapshot.season.yearCode)}_${sectionId}.csv`,
@@ -408,11 +387,12 @@ function generateCsvFiles(
 function generateSingleCsvBuffer(
   snapshot: BudgetSnapshot,
   sections: BudgetSectionId[],
-  delimiter: string
+  delimiter: string,
+  locale: Locale = "en"
 ): Buffer {
   const BOM = "\uFEFF";
   const blocks = sections.map(sectionId => {
-    const data = getSectionTabularData(sectionId, snapshot);
+    const data = getSectionTabularData(sectionId, snapshot, locale);
     return `${data.title}\r\n` + buildCsvLines(data.headers, data.rows, delimiter);
   });
   return Buffer.from(BOM + blocks.join("\r\n\r\n"), "utf8");
@@ -420,7 +400,8 @@ function generateSingleCsvBuffer(
 
 function generatePdfBuffer(
   snapshot: BudgetSnapshot,
-  sections: BudgetSectionId[]
+  sections: BudgetSectionId[],
+  locale: Locale = "en"
 ): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     const doc = new PDFDocument({ size: "A4", layout: "landscape", margin: 36 });
@@ -430,14 +411,15 @@ function generatePdfBuffer(
     doc.on("error", reject);
 
     const { season, analytics } = snapshot;
+    const exp = getDictionary(locale).exportReport;
 
-    doc.fontSize(18).font("Helvetica-Bold").fillColor("#0f172a").text("INSA Racing — Budget Declaration Report");
+    doc.fontSize(18).font("Helvetica-Bold").fillColor("#0f172a").text(exp.pdfTitle);
     doc
       .fontSize(10)
       .font("Helvetica")
       .fillColor("#475569")
       .text(
-        `Season: ${season.name} (${season.startDate} to ${season.deadlineDate})   |   Generated: ${formatDate(new Date())}   |   Currency: EUR (TTC)`
+        exp.pdfMeta(season.name, season.startDate, season.deadlineDate, formatDate(new Date(), locale))
       );
     doc.moveDown(0.8);
 
@@ -447,7 +429,12 @@ function generatePdfBuffer(
       .font("Helvetica-Bold")
       .fillColor("#0f172a")
       .text(
-        `Actual Cash Left: ${formatEur(analytics.actualCashLeftCents)}   |   Projected Balance: ${formatEur(analytics.projectedBalanceCents)}   |   Final Spendings: ${formatEur(analytics.finalSpendingsCents)}   |   Provisional Spendings: ${formatEur(analytics.provisionalSpendingsCents)}`
+        exp.pdfKpis(
+          formatEur(analytics.actualCashLeftCents, locale),
+          formatEur(analytics.projectedBalanceCents, locale),
+          formatEur(analytics.finalSpendingsCents, locale),
+          formatEur(analytics.provisionalSpendingsCents, locale)
+        )
       );
     doc.moveDown(1);
 
@@ -455,7 +442,7 @@ function generatePdfBuffer(
 
     for (let sIdx = 0; sIdx < sections.length; sIdx++) {
       const sectionId = sections[sIdx];
-      const data = getSectionTabularData(sectionId, snapshot);
+      const data = getSectionTabularData(sectionId, snapshot, locale);
 
       if (doc.y > doc.page.height - 130) {
         doc.addPage();
@@ -499,7 +486,7 @@ function generatePdfBuffer(
 
       drawRow(data.headers, true, false);
       if (data.rows.length === 0) {
-        drawRow(["No records in this section.", ...new Array(Math.max(0, colCount - 1)).fill("")], false, false);
+        drawRow([exp.pdfEmptySection, ...new Array(Math.max(0, colCount - 1)).fill("")], false, false);
       } else {
         data.rows.forEach((row, idx) => drawRow(row, false, idx % 2 === 1));
       }
@@ -630,6 +617,7 @@ export async function generateBudgetExport(params: ExportRequestParams): Promise
 
   const validOrder = BUDGET_SECTIONS.map(s => s.id).filter(id => params.sections.includes(id));
   const selectedSections = validOrder.length > 0 ? validOrder : (["summary"] as BudgetSectionId[]);
+  const locale = normalizeLocale(params.locale ?? "en");
   const baseSlug = `INSA_Racing_Budget_${slugifyFilename(snapshot.season.yearCode)}_${new Date().toISOString().slice(0, 10)}`;
 
   if (params.includeZip) {
@@ -638,18 +626,18 @@ export async function generateBudgetExport(params: ExportRequestParams): Promise
       primaryFiles = [
         {
           filename: `${baseSlug}.xlsx`,
-          content: await generateXlsxBuffer(snapshot, selectedSections)
+          content: await generateXlsxBuffer(snapshot, selectedSections, locale)
         }
       ];
     } else if (params.format === "pdf") {
       primaryFiles = [
         {
           filename: `${baseSlug}.pdf`,
-          content: await generatePdfBuffer(snapshot, selectedSections)
+          content: await generatePdfBuffer(snapshot, selectedSections, locale)
         }
       ];
     } else {
-      primaryFiles = generateCsvFiles(snapshot, selectedSections, params.csvDelimiter);
+      primaryFiles = generateCsvFiles(snapshot, selectedSections, params.csvDelimiter, locale);
     }
 
     const zipBuffer = await createStructuredZipBuffer({
@@ -669,7 +657,7 @@ export async function generateBudgetExport(params: ExportRequestParams): Promise
     return {
       filename: `${baseSlug}.xlsx`,
       mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-      buffer: await generateXlsxBuffer(snapshot, selectedSections)
+      buffer: await generateXlsxBuffer(snapshot, selectedSections, locale)
     };
   }
 
@@ -677,13 +665,13 @@ export async function generateBudgetExport(params: ExportRequestParams): Promise
     return {
       filename: `${baseSlug}.pdf`,
       mimeType: "application/pdf",
-      buffer: await generatePdfBuffer(snapshot, selectedSections)
+      buffer: await generatePdfBuffer(snapshot, selectedSections, locale)
     };
   }
 
   return {
     filename: `${baseSlug}.csv`,
     mimeType: "text/csv; charset=utf-8",
-    buffer: generateSingleCsvBuffer(snapshot, selectedSections, params.csvDelimiter)
+    buffer: generateSingleCsvBuffer(snapshot, selectedSections, params.csvDelimiter, locale)
   };
 }
