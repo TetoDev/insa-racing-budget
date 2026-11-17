@@ -2,11 +2,13 @@ import { Title } from "@solidjs/meta";
 import { A, revalidate, useNavigate } from "@solidjs/router";
 import { ArrowLeft, FileText, ImagePlus, Plus, Trash2 } from "lucide-solid";
 import { For, Show, createSignal } from "solid-js";
+import { createStore, produce, unwrap } from "solid-js/store";
 import { useApp, useI18n } from "~/components/AppContext";
 import { CarSystemField } from "~/components/CarSystemField";
 import { DEPARTMENTS, type DepartmentId } from "~/lib/constants";
 import { formatBytes } from "~/lib/format";
 import { getDepartmentLabel } from "~/lib/i18n";
+import { syncControlValue } from "~/lib/input-sync";
 import { canCreateRequest } from "~/lib/permissions";
 
 interface DraftOption {
@@ -26,7 +28,7 @@ export default function NewRequestPage() {
   const [department, setDepartment] = createSignal<DepartmentId>("aero");
   const [carSystem, setCarSystem] = createSignal("");
   const [explanation, setExplanation] = createSignal("");
-  const [options, setOptions] = createSignal<DraftOption[]>([
+  const [options, setOptions] = createStore<DraftOption[]>([
     { label: "", productUrl: "", priceEur: "", drawbacks: "", notes: "" }
   ]);
   const [photos, setPhotos] = createSignal<File[]>([]);
@@ -35,15 +37,20 @@ export default function NewRequestPage() {
   const [error, setError] = createSignal("");
 
   const addOption = () => {
-    setOptions(prev => [...prev, { label: "", productUrl: "", priceEur: "", drawbacks: "", notes: "" }]);
+    setOptions(options.length, { label: "", productUrl: "", priceEur: "", drawbacks: "", notes: "" });
   };
 
   const removeOption = (idx: number) => {
-    setOptions(prev => (prev.length <= 1 ? prev : prev.filter((_, i) => i !== idx)));
+    if (options.length <= 1) return;
+    setOptions(
+      produce(draft => {
+        draft.splice(idx, 1);
+      })
+    );
   };
 
   const updateOption = (idx: number, field: keyof DraftOption, value: string) => {
-    setOptions(prev => prev.map((opt, i) => (i === idx ? { ...opt, [field]: value } : opt)));
+    setOptions(idx, field, value);
   };
 
   const handlePhotoChange = (files: FileList | null) => {
@@ -70,7 +77,7 @@ export default function NewRequestPage() {
           department: department(),
           carSystem: carSystem(),
           explanation: explanation(),
-          options: options()
+          options: unwrap(options)
         })
       );
 
@@ -213,14 +220,14 @@ export default function NewRequestPage() {
             </div>
 
             <div class="space-y-4">
-              <For each={options()}>
+              <For each={options}>
                 {(opt, idx) => (
                   <div class="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/70 dark:bg-slate-800/50 p-4 space-y-3">
                     <div class="flex items-center justify-between">
                       <span class="text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400">
                         {t().requests.optionNumber(idx() + 1)}
                       </span>
-                      <Show when={options().length > 1}>
+                      <Show when={options.length > 1}>
                         <button
                           type="button"
                           onClick={() => removeOption(idx())}
@@ -238,9 +245,9 @@ export default function NewRequestPage() {
                           {t().requests.optionLabel}
                         </label>
                         <input
+                          ref={syncControlValue(() => opt.label)}
                           type="text"
                           required
-                          value={opt.label}
                           onInput={e => updateOption(idx(), "label", e.currentTarget.value)}
                           placeholder={t().requests.optionLabelPlaceholder}
                           class="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:border-red-500 focus:outline-none"
@@ -252,9 +259,9 @@ export default function NewRequestPage() {
                           {t().requests.priceLabel}
                         </label>
                         <input
+                          ref={syncControlValue(() => opt.priceEur)}
                           type="text"
                           required
-                          value={opt.priceEur}
                           onInput={e => updateOption(idx(), "priceEur", e.currentTarget.value)}
                           placeholder={t().requests.pricePlaceholder}
                           class="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 tabular-nums placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:border-red-500 focus:outline-none"
@@ -268,8 +275,8 @@ export default function NewRequestPage() {
                           {t().requests.productUrlLabel}
                         </label>
                         <input
+                          ref={syncControlValue(() => opt.productUrl)}
                           type="url"
-                          value={opt.productUrl}
                           onInput={e => updateOption(idx(), "productUrl", e.currentTarget.value)}
                           placeholder="https://..."
                           class="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:border-red-500 focus:outline-none"
@@ -280,8 +287,8 @@ export default function NewRequestPage() {
                           {t().requests.notesLabel}
                         </label>
                         <input
+                          ref={syncControlValue(() => opt.notes)}
                           type="text"
-                          value={opt.notes}
                           onInput={e => updateOption(idx(), "notes", e.currentTarget.value)}
                           placeholder={t().requests.notesPlaceholder}
                           class="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:border-red-500 focus:outline-none"
@@ -294,9 +301,9 @@ export default function NewRequestPage() {
                         {t().requests.drawbacksLabel}
                       </label>
                       <textarea
+                        ref={syncControlValue(() => opt.drawbacks)}
                         required
                         rows={2}
-                        value={opt.drawbacks}
                         onInput={e => updateOption(idx(), "drawbacks", e.currentTarget.value)}
                         placeholder={t().requests.drawbacksPlaceholder}
                         class="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:border-red-500 focus:outline-none"

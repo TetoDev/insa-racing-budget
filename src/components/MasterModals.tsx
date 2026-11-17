@@ -10,6 +10,8 @@ import {
   X
 } from "lucide-solid";
 import { For, Show, createEffect, createSignal } from "solid-js";
+import { createStore, produce, reconcile, unwrap } from "solid-js/store";
+import { syncControlValue } from "~/lib/input-sync";
 import {
   CAR_SYSTEM_SUGGESTIONS,
   DEPARTMENTS,
@@ -141,7 +143,7 @@ export function MasterEditRequestModal(props: {
   const [archivedAt, setArchivedAt] = createSignal("");
   const [createdAt, setCreatedAt] = createSignal("");
 
-  const [options, setOptions] = createSignal<
+  const [options, setOptions] = createStore<
     Array<{
       id: string | null;
       clientKey: string;
@@ -152,7 +154,7 @@ export function MasterEditRequestModal(props: {
       notes: string;
     }>
   >([]);
-  const [attUpdates, setAttUpdates] = createSignal<
+  const [attUpdates, setAttUpdates] = createStore<
     Array<{ id: string; originalName: string; kind: RequestAttKind }>
   >([]);
   const [removeAttIds, setRemoveAttIds] = createSignal<string[]>([]);
@@ -193,24 +195,28 @@ export function MasterEditRequestModal(props: {
     setCreatedAt(toDateTimeLocalInput(r.createdAt));
 
     setOptions(
-      r.options.map(o => ({
-        id: o.id,
-        clientKey: o.id,
-        label: o.label,
-        productUrl: o.productUrl ?? "",
-        priceEur: formatCentsPlain(o.priceCents),
-        drawbacks: o.drawbacks,
-        notes: o.notes ?? ""
-      }))
+      reconcile(
+        r.options.map(o => ({
+          id: o.id,
+          clientKey: o.id,
+          label: o.label,
+          productUrl: o.productUrl ?? "",
+          priceEur: formatCentsPlain(o.priceCents),
+          drawbacks: o.drawbacks,
+          notes: o.notes ?? ""
+        }))
+      )
     );
     setAttUpdates(
-      r.attachments.map(a => ({
-        id: a.id,
-        originalName: a.originalName,
-        kind: (["photo", "document", "invoice", "fee_proof"].includes(a.kind)
-          ? a.kind
-          : "document") as RequestAttKind
-      }))
+      reconcile(
+        r.attachments.map(a => ({
+          id: a.id,
+          originalName: a.originalName,
+          kind: (["photo", "document", "invoice", "fee_proof"].includes(a.kind)
+            ? a.kind
+            : "document") as RequestAttKind
+        }))
+      )
     );
     setRemoveAttIds([]);
     setNewPhotos([]);
@@ -223,24 +229,29 @@ export function MasterEditRequestModal(props: {
 
   function moveOption(index: number, delta: -1 | 1) {
     const target = index + delta;
-    setOptions(prev => {
-      if (target < 0 || target >= prev.length) return prev;
-      const copy = [...prev];
-      const [item] = copy.splice(index, 1);
-      copy.splice(target, 0, item);
-      return copy;
-    });
+    if (target < 0 || target >= options.length) return;
+    setOptions(
+      produce(draft => {
+        const [item] = draft.splice(index, 1);
+        draft.splice(target, 0, item);
+      })
+    );
   }
 
   function removeOption(clientKey: string) {
-    setOptions(prev => prev.filter(o => o.clientKey !== clientKey));
+    setOptions(
+      produce(draft => {
+        const idx = draft.findIndex(o => o.clientKey === clientKey);
+        if (idx !== -1) draft.splice(idx, 1);
+      })
+    );
     if (selectedOptionClientKey() === clientKey) {
       setSelectedOptionClientKey("");
     }
   }
 
   function syncPriceFromSelectedOption() {
-    const chosen = options().find(o => o.clientKey === selectedOptionClientKey());
+    const chosen = options.find(o => o.clientKey === selectedOptionClientKey());
     if (chosen) {
       setSelectedOptionPriceEur(chosen.priceEur);
     }
@@ -277,7 +288,7 @@ export function MasterEditRequestModal(props: {
           invoicedAt: fromDateTimeLocalInput(invoicedAt()),
           archivedAt: fromDateTimeLocalInput(archivedAt()),
           createdAt: fromDateTimeLocalInput(createdAt()) ?? req.createdAt,
-          options: options().map(o => ({
+          options: unwrap(options).map(o => ({
             id: o.id,
             clientKey: o.clientKey,
             label: o.label,
@@ -286,7 +297,7 @@ export function MasterEditRequestModal(props: {
             drawbacks: o.drawbacks,
             notes: o.notes.trim() || null
           })),
-          attachmentUpdates: attUpdates(),
+          attachmentUpdates: unwrap(attUpdates),
           removeAttachmentIds: removeAttIds(),
           editReason: editReason()
         })
@@ -616,7 +627,7 @@ export function MasterEditRequestModal(props: {
                     class="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100 px-2.5 py-2 text-xs"
                   >
                     <option value="">{t().common.noneSelected}</option>
-                    <For each={options()}>
+                    <For each={options}>
                       {(opt, idx) => (
                         <option value={opt.clientKey}>
                           {t().masterModals.optionNumber(idx() + 1)}: {opt.label || t().common.untitled} (
@@ -692,24 +703,21 @@ export function MasterEditRequestModal(props: {
             <div class="space-y-2">
               <div class="flex items-center justify-between">
                 <h4 class="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                  {t().masterModals.buyingOptionsCount(options().length)}
+                  {t().masterModals.buyingOptionsCount(options.length)}
                 </h4>
                 <button
                   type="button"
                   onClick={() => {
                     newOptCounter += 1;
-                    setOptions(prev => [
-                      ...prev,
-                      {
-                        id: null,
-                        clientKey: `new-${Date.now()}-${newOptCounter}`,
-                        label: "",
-                        productUrl: "",
-                        priceEur: "0.00",
-                        drawbacks: "",
-                        notes: ""
-                      }
-                    ]);
+                    setOptions(options.length, {
+                      id: null,
+                      clientKey: `new-${Date.now()}-${newOptCounter}`,
+                      label: "",
+                      productUrl: "",
+                      priceEur: "0.00",
+                      drawbacks: "",
+                      notes: ""
+                    });
                   }}
                   class="inline-flex items-center gap-1 rounded-lg bg-slate-900 dark:bg-slate-100 px-2.5 py-1 text-xs font-semibold text-white dark:text-slate-950 hover:bg-slate-800 dark:hover:bg-white cursor-pointer"
                 >
@@ -718,7 +726,7 @@ export function MasterEditRequestModal(props: {
                 </button>
               </div>
               <div class="space-y-2">
-                <For each={options()}>
+                <For each={options}>
                   {(opt, i) => (
                     <div class="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/70 p-3 space-y-2">
                       <div class="flex items-center justify-between text-xs">
@@ -742,7 +750,7 @@ export function MasterEditRequestModal(props: {
                           </button>
                           <button
                             type="button"
-                            disabled={i() === options().length - 1}
+                            disabled={i() === options.length - 1}
                             onClick={() => moveOption(i(), 1)}
                             class="rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-1 text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-100 disabled:opacity-30 cursor-pointer"
                             title={t().common.moveDown}
@@ -761,72 +769,42 @@ export function MasterEditRequestModal(props: {
                       </div>
                       <div class="grid sm:grid-cols-3 gap-2">
                         <input
+                          ref={syncControlValue(() => opt.label)}
                           type="text"
                           required
-                          value={opt.label}
                           placeholder={t().masterModals.supplierPlaceholder}
-                          onInput={e =>
-                            setOptions(prev =>
-                              prev.map((x, idx) =>
-                                idx === i() ? { ...x, label: e.currentTarget.value } : x
-                              )
-                            )
-                          }
+                          onInput={e => setOptions(i(), "label", e.currentTarget.value)}
                           class="sm:col-span-2 rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100 dark:placeholder:text-slate-500 px-2.5 py-1.5 text-xs"
                         />
                         <input
+                          ref={syncControlValue(() => opt.priceEur)}
                           type="text"
                           required
-                          value={opt.priceEur}
                           placeholder={t().masterModals.priceEurPlaceholder}
-                          onInput={e =>
-                            setOptions(prev =>
-                              prev.map((x, idx) =>
-                                idx === i() ? { ...x, priceEur: e.currentTarget.value } : x
-                              )
-                            )
-                          }
+                          onInput={e => setOptions(i(), "priceEur", e.currentTarget.value)}
                           class="rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100 dark:placeholder:text-slate-500 px-2.5 py-1.5 text-xs tabular-nums"
                         />
                       </div>
                       <input
+                        ref={syncControlValue(() => opt.drawbacks)}
                         type="text"
-                        value={opt.drawbacks}
                         placeholder={t().masterModals.drawbacksOptionalPlaceholder}
-                        onInput={e =>
-                          setOptions(prev =>
-                            prev.map((x, idx) =>
-                              idx === i() ? { ...x, drawbacks: e.currentTarget.value } : x
-                            )
-                          )
-                        }
+                        onInput={e => setOptions(i(), "drawbacks", e.currentTarget.value)}
                         class="w-full rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100 dark:placeholder:text-slate-500 px-2.5 py-1.5 text-xs"
                       />
                       <div class="grid sm:grid-cols-2 gap-2">
                         <input
+                          ref={syncControlValue(() => opt.productUrl)}
                           type="url"
-                          value={opt.productUrl}
                           placeholder={t().masterModals.urlOptionalPlaceholder}
-                          onInput={e =>
-                            setOptions(prev =>
-                              prev.map((x, idx) =>
-                                idx === i() ? { ...x, productUrl: e.currentTarget.value } : x
-                              )
-                            )
-                          }
+                          onInput={e => setOptions(i(), "productUrl", e.currentTarget.value)}
                           class="rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100 dark:placeholder:text-slate-500 px-2.5 py-1.5 text-xs"
                         />
                         <input
+                          ref={syncControlValue(() => opt.notes)}
                           type="text"
-                          value={opt.notes}
                           placeholder={t().masterModals.notesOptionalPlaceholder}
-                          onInput={e =>
-                            setOptions(prev =>
-                              prev.map((x, idx) =>
-                                idx === i() ? { ...x, notes: e.currentTarget.value } : x
-                              )
-                            )
-                          }
+                          onInput={e => setOptions(i(), "notes", e.currentTarget.value)}
                           class="rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100 dark:placeholder:text-slate-500 px-2.5 py-1.5 text-xs"
                         />
                       </div>
@@ -839,23 +817,17 @@ export function MasterEditRequestModal(props: {
             {/* F. Attachments */}
             <div class="rounded-xl border border-slate-200 dark:border-slate-800 p-4 space-y-3">
               <h4 class="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                {t().masterModals.attachmentsExistingCount(attUpdates().length)}
+                {t().masterModals.attachmentsExistingCount(attUpdates.length)}
               </h4>
-              <Show when={attUpdates().length > 0}>
+              <Show when={attUpdates.length > 0}>
                 <div class="space-y-2">
-                  <For each={attUpdates()}>
+                  <For each={attUpdates}>
                     {(att, idx) => (
                       <div class="flex flex-wrap items-center gap-2 rounded-lg bg-slate-50 dark:bg-slate-800/70 border border-slate-200 dark:border-slate-700 p-2 text-xs">
                         <select
                           value={att.kind}
                           onChange={e =>
-                            setAttUpdates(prev =>
-                              prev.map((x, i2) =>
-                                i2 === idx()
-                                  ? { ...x, kind: e.currentTarget.value as RequestAttKind }
-                                  : x
-                              )
-                            )
+                            setAttUpdates(idx(), "kind", e.currentTarget.value as RequestAttKind)
                           }
                           class="rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100 px-2 py-1 text-xs"
                         >
@@ -865,15 +837,11 @@ export function MasterEditRequestModal(props: {
                           <option value="invoice">{getAttachmentKindLabel(locale(), "invoice")}</option>
                         </select>
                         <input
+                          ref={syncControlValue(() => att.originalName)}
                           type="text"
                           required
-                          value={att.originalName}
                           onInput={e =>
-                            setAttUpdates(prev =>
-                              prev.map((x, i2) =>
-                                i2 === idx() ? { ...x, originalName: e.currentTarget.value } : x
-                              )
-                            )
+                            setAttUpdates(idx(), "originalName", e.currentTarget.value)
                           }
                           class="flex-1 min-w-[160px] rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100 px-2 py-1 text-xs"
                         />
@@ -1012,7 +980,7 @@ export function MasterEditEntryModal(props: {
   const [confirmedAt, setConfirmedAt] = createSignal("");
   const [createdAt, setCreatedAt] = createSignal("");
 
-  const [attUpdates, setAttUpdates] = createSignal<
+  const [attUpdates, setAttUpdates] = createStore<
     Array<{ id: string; originalName: string; kind: EntryAttKind }>
   >([]);
   const [removeAttIds, setRemoveAttIds] = createSignal<string[]>([]);
@@ -1043,11 +1011,13 @@ export function MasterEditEntryModal(props: {
     setCreatedAt(toDateTimeLocalInput(target.createdAt));
 
     setAttUpdates(
-      target.attachments.map(a => ({
-        id: a.id,
-        originalName: a.originalName,
-        kind: (a.kind === "invoice" ? "invoice" : "supporting_doc") as EntryAttKind
-      }))
+      reconcile(
+        target.attachments.map(a => ({
+          id: a.id,
+          originalName: a.originalName,
+          kind: (a.kind === "invoice" ? "invoice" : "supporting_doc") as EntryAttKind
+        }))
+      )
     );
     setRemoveAttIds([]);
     setNewSupporting([]);
@@ -1080,7 +1050,7 @@ export function MasterEditEntryModal(props: {
           confirmedById: confirmedById() || null,
           confirmedAt: fromDateTimeLocalInput(confirmedAt()),
           createdAt: fromDateTimeLocalInput(createdAt()) ?? target.createdAt,
-          attachmentUpdates: attUpdates(),
+          attachmentUpdates: unwrap(attUpdates),
           removeAttachmentIds: removeAttIds(),
           editReason: editReason()
         })
@@ -1326,23 +1296,17 @@ export function MasterEditEntryModal(props: {
 
             <div class="rounded-xl border border-slate-200 dark:border-slate-800 p-4 space-y-3">
               <h4 class="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                {t().masterModals.attachmentsExistingCount(attUpdates().length)}
+                {t().masterModals.attachmentsExistingCount(attUpdates.length)}
               </h4>
-              <Show when={attUpdates().length > 0}>
+              <Show when={attUpdates.length > 0}>
                 <div class="space-y-2">
-                  <For each={attUpdates()}>
+                  <For each={attUpdates}>
                     {(att, idx) => (
                       <div class="flex flex-wrap items-center gap-2 rounded-lg bg-slate-50 dark:bg-slate-800/70 border border-slate-200 dark:border-slate-700 p-2 text-xs">
                         <select
                           value={att.kind}
                           onChange={e =>
-                            setAttUpdates(prev =>
-                              prev.map((x, i2) =>
-                                i2 === idx()
-                                  ? { ...x, kind: e.currentTarget.value as EntryAttKind }
-                                  : x
-                              )
-                            )
+                            setAttUpdates(idx(), "kind", e.currentTarget.value as EntryAttKind)
                           }
                           class="rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100 px-2 py-1 text-xs"
                         >
@@ -1354,15 +1318,11 @@ export function MasterEditEntryModal(props: {
                           </option>
                         </select>
                         <input
+                          ref={syncControlValue(() => att.originalName)}
                           type="text"
                           required
-                          value={att.originalName}
                           onInput={e =>
-                            setAttUpdates(prev =>
-                              prev.map((x, i2) =>
-                                i2 === idx() ? { ...x, originalName: e.currentTarget.value } : x
-                              )
-                            )
+                            setAttUpdates(idx(), "originalName", e.currentTarget.value)
                           }
                           class="flex-1 min-w-[160px] rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100 px-2 py-1 text-xs"
                         />

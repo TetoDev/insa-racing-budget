@@ -26,6 +26,8 @@ import {
   XCircle
 } from "lucide-solid";
 import { For, Show, createEffect, createSignal } from "solid-js";
+import { createStore, produce, reconcile, unwrap } from "solid-js/store";
+import { syncControlValue } from "~/lib/input-sync";
 import { useApp, useI18n } from "~/components/AppContext";
 import {
   DepartmentBadge,
@@ -122,7 +124,7 @@ export default function RequestDetailPage() {
   const [editTitle, setEditTitle] = createSignal("");
   const [editCarSystem, setEditCarSystem] = createSignal("");
   const [editExplanation, setEditExplanation] = createSignal("");
-  const [editOptions, setEditOptions] = createSignal<
+  const [editOptions, setEditOptions] = createStore<
     Array<{ label: string; productUrl: string; priceEur: string; drawbacks: string; notes: string }>
   >([]);
   const [editRemoveIds, setEditRemoveIds] = createSignal<string[]>([]);
@@ -153,13 +155,15 @@ export default function RequestDetailPage() {
     setEditCarSystem(d.carSystem);
     setEditExplanation(d.explanation);
     setEditOptions(
-      d.options.map(o => ({
-        label: o.label,
-        productUrl: o.productUrl ?? "",
-        priceEur: formatCentsPlain(o.priceCents),
-        drawbacks: o.drawbacks,
-        notes: o.notes ?? ""
-      }))
+      reconcile(
+        d.options.map(o => ({
+          label: o.label,
+          productUrl: o.productUrl ?? "",
+          priceEur: formatCentsPlain(o.priceCents),
+          drawbacks: o.drawbacks,
+          notes: o.notes ?? ""
+        }))
+      )
     );
     setEditRemoveIds([]);
     setEditNewPhotos([]);
@@ -250,7 +254,7 @@ export default function RequestDetailPage() {
           title: editTitle(),
           carSystem: editCarSystem(),
           explanation: editExplanation(),
-          options: editOptions(),
+          options: unwrap(editOptions),
           removeAttachmentIds: editRemoveIds()
         })
       );
@@ -1282,26 +1286,33 @@ export default function RequestDetailPage() {
                         <button
                           type="button"
                           onClick={() =>
-                            setEditOptions(prev => [
-                              ...prev,
-                              { label: "", productUrl: "", priceEur: "", drawbacks: "", notes: "" }
-                            ])
+                            setEditOptions(editOptions.length, {
+                              label: "",
+                              productUrl: "",
+                              priceEur: "",
+                              drawbacks: "",
+                              notes: ""
+                            })
                           }
                           class="inline-flex items-center gap-1 text-xs font-semibold text-red-600 dark:text-red-400 cursor-pointer"
                         >
                           <Plus class="h-3.5 w-3.5" /> {t().requests.addOptionBtn}
                         </button>
                       </div>
-                      <For each={editOptions()}>
+                      <For each={editOptions}>
                         {(opt, i) => (
                           <div class="rounded-lg border border-slate-200 dark:border-slate-700 p-3 space-y-2 bg-slate-50 dark:bg-slate-800/60">
                             <div class="flex justify-between items-center text-xs">
                               <span class="font-bold text-slate-800 dark:text-slate-200">{t().requests.optionNumber(i() + 1)}</span>
-                              <Show when={editOptions().length > 1}>
+                              <Show when={editOptions.length > 1}>
                                 <button
                                   type="button"
                                   onClick={() =>
-                                    setEditOptions(prev => prev.filter((_, idx) => idx !== i()))
+                                    setEditOptions(
+                                      produce(draft => {
+                                        draft.splice(i(), 1);
+                                      })
+                                    )
                                   }
                                   class="text-rose-600 dark:text-rose-400 inline-flex items-center gap-1 cursor-pointer"
                                 >
@@ -1311,73 +1322,43 @@ export default function RequestDetailPage() {
                             </div>
                             <div class="grid grid-cols-3 gap-2">
                               <input
+                                ref={syncControlValue(() => opt.label)}
                                 type="text"
                                 required
-                                value={opt.label}
                                 placeholder={t().requestDetail.editModalSupplierPlaceholder}
-                                onInput={e =>
-                                  setEditOptions(prev =>
-                                    prev.map((x, idx) =>
-                                      idx === i() ? { ...x, label: e.currentTarget.value } : x
-                                    )
-                                  )
-                                }
+                                onInput={e => setEditOptions(i(), "label", e.currentTarget.value)}
                                 class="col-span-2 rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 px-2.5 py-1.5 text-xs text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500"
                               />
                               <input
+                                ref={syncControlValue(() => opt.priceEur)}
                                 type="text"
                                 required
-                                value={opt.priceEur}
                                 placeholder={t().requestDetail.editModalPricePlaceholder}
-                                onInput={e =>
-                                  setEditOptions(prev =>
-                                    prev.map((x, idx) =>
-                                      idx === i() ? { ...x, priceEur: e.currentTarget.value } : x
-                                    )
-                                  )
-                                }
+                                onInput={e => setEditOptions(i(), "priceEur", e.currentTarget.value)}
                                 class="rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 px-2.5 py-1.5 text-xs text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 tabular-nums"
                               />
                             </div>
                             <input
+                              ref={syncControlValue(() => opt.drawbacks)}
                               type="text"
                               required
-                              value={opt.drawbacks}
                               placeholder={t().requestDetail.editModalDrawbacksPlaceholder}
-                              onInput={e =>
-                                setEditOptions(prev =>
-                                  prev.map((x, idx) =>
-                                    idx === i() ? { ...x, drawbacks: e.currentTarget.value } : x
-                                  )
-                                )
-                              }
+                              onInput={e => setEditOptions(i(), "drawbacks", e.currentTarget.value)}
                               class="w-full rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 px-2.5 py-1.5 text-xs text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500"
                             />
                             <div class="grid grid-cols-2 gap-2">
                               <input
+                                ref={syncControlValue(() => opt.productUrl)}
                                 type="url"
-                                value={opt.productUrl}
                                 placeholder={t().requestDetail.editModalUrlPlaceholder}
-                                onInput={e =>
-                                  setEditOptions(prev =>
-                                    prev.map((x, idx) =>
-                                      idx === i() ? { ...x, productUrl: e.currentTarget.value } : x
-                                    )
-                                  )
-                                }
+                                onInput={e => setEditOptions(i(), "productUrl", e.currentTarget.value)}
                                 class="rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 px-2.5 py-1.5 text-xs text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500"
                               />
                               <input
+                                ref={syncControlValue(() => opt.notes)}
                                 type="text"
-                                value={opt.notes}
                                 placeholder={t().requestDetail.editModalNotesPlaceholder}
-                                onInput={e =>
-                                  setEditOptions(prev =>
-                                    prev.map((x, idx) =>
-                                      idx === i() ? { ...x, notes: e.currentTarget.value } : x
-                                    )
-                                  )
-                                }
+                                onInput={e => setEditOptions(i(), "notes", e.currentTarget.value)}
                                 class="rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 px-2.5 py-1.5 text-xs text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500"
                               />
                             </div>

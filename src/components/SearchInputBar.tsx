@@ -1,5 +1,6 @@
 import { Search, X } from "lucide-solid";
-import { Show, createEffect } from "solid-js";
+import { Show } from "solid-js";
+import { syncControlValue } from "~/lib/input-sync";
 import { useI18n } from "./AppContext";
 
 export function SearchInputBar(props: {
@@ -10,25 +11,12 @@ export function SearchInputBar(props: {
   class?: string;
 }) {
   const { t } = useI18n();
-  let inputRef: HTMLInputElement | undefined;
-
-  // Sync programmatic updates (such as Clear Search) without re-assigning identical DOM values
-  // so mid-string typing preserves caret position.
-  createEffect(() => {
-    const next = props.value ?? "";
-    if (inputRef && inputRef.value !== next) {
-      inputRef.value = next;
-    }
-  });
 
   return (
     <div class={`relative flex items-center ${props.class ?? ""}`}>
       <Search class="h-4 w-4 text-slate-400 absolute left-3 pointer-events-none" />
       <input
-        ref={el => {
-          inputRef = el;
-          el.value = props.value ?? "";
-        }}
+        ref={syncControlValue(() => props.value)}
         type="text"
         aria-label={props.ariaLabel ?? props.placeholder}
         onInput={e => props.onInput(e.currentTarget.value)}
