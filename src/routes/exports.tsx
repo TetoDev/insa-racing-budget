@@ -1,6 +1,6 @@
 import { Title } from "@solidjs/meta";
 import { useSearchParams } from "@solidjs/router";
-import { Archive, Download, FileSpreadsheet, FolderArchive } from "lucide-solid";
+import { Archive, Download, FileSpreadsheet, FolderArchive, Languages } from "lucide-solid";
 import { For, Show, createSignal } from "solid-js";
 import { useApp, useI18n } from "~/components/AppContext";
 import {
@@ -9,7 +9,13 @@ import {
   type BudgetSectionId,
   type RatePeriod
 } from "~/lib/constants";
-import { getBudgetSectionLabel, getRatePeriodLabel, getSeasonStatusLabel } from "~/lib/i18n";
+import {
+  getBudgetSectionLabel,
+  getRatePeriodLabel,
+  getSeasonStatusLabel,
+  normalizeLocale,
+  type Locale
+} from "~/lib/i18n";
 import { canExportBudget } from "~/lib/permissions";
 
 export default function ExportsPage() {
@@ -35,8 +41,18 @@ export default function ExportsPage() {
     return BUDGET_SECTIONS.map(sec => sec.id);
   };
 
+  const initialExportLocale = (): Locale | null => {
+    const raw = searchParams.lang;
+    return typeof raw === "string" && (raw === "fr" || raw === "en")
+      ? normalizeLocale(raw)
+      : null;
+  };
+
   const [seasonId, setSeasonId] = createSignal(
     typeof searchParams.season === "string" ? searchParams.season : ""
+  );
+  const [manualExportLocale, setManualExportLocale] = createSignal<Locale | null>(
+    initialExportLocale()
   );
   const [format, setFormat] = createSignal<"xlsx" | "csv" | "pdf">("xlsx");
   const [csvDelimiter, setCsvDelimiter] = createSignal<";" | ",">(";");
@@ -56,6 +72,9 @@ export default function ExportsPage() {
   const [exportedMessage, setExportedMessage] = createSignal("");
 
   const effectiveSeasonId = () => seasonId() || app.selectedSeasonId();
+  const exportLocale = (): Locale => manualExportLocale() ?? locale();
+  const exportLangShort = () =>
+    exportLocale() === "fr" ? t().exports.languageFrLabel : t().exports.languageEnLabel;
 
   const toggleSection = (id: BudgetSectionId) => {
     setSelectedSections(prev =>
@@ -92,7 +111,7 @@ export default function ExportsPage() {
           fromDate: fromDate() || undefined,
           toDate: toDate() || undefined,
           ratePeriod: ratePeriod(),
-          locale: locale()
+          locale: exportLocale()
         })
       });
 
@@ -204,6 +223,57 @@ export default function ExportsPage() {
                   onInput={e => setToDate(e.currentTarget.value)}
                   class="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 focus:border-red-500 focus:outline-none"
                 />
+              </div>
+            </div>
+
+            <div class="pt-2 space-y-2">
+              <div class="flex flex-wrap items-baseline justify-between gap-2">
+                <span class="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">
+                  {t().exports.languageLabel}
+                </span>
+                <span class="text-[11px] text-slate-500 dark:text-slate-400">
+                  {t().exports.languageHint}
+                </span>
+              </div>
+              <div
+                role="group"
+                aria-label={t().exports.languageLabel}
+                class="grid sm:grid-cols-2 gap-3"
+              >
+                <For
+                  each={[
+                    {
+                      id: "en" as const,
+                      title: t().exports.languageEnLabel,
+                      desc: t().exports.languageEnDesc
+                    },
+                    {
+                      id: "fr" as const,
+                      title: t().exports.languageFrLabel,
+                      desc: t().exports.languageFrDesc
+                    }
+                  ]}
+                >
+                  {langOpt => (
+                    <button
+                      type="button"
+                      data-testid={`export-locale-${langOpt.id}`}
+                      aria-pressed={exportLocale() === langOpt.id}
+                      onClick={() => setManualExportLocale(langOpt.id)}
+                      class={`rounded-xl border p-3.5 text-left transition-all cursor-pointer ${
+                        exportLocale() === langOpt.id
+                          ? "border-slate-900 bg-slate-900 text-white dark:border-red-500 dark:bg-red-950/50 dark:text-white"
+                          : "border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60 text-slate-800 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800"
+                      }`}
+                    >
+                      <div class="flex items-center gap-2 font-bold text-sm">
+                        <Languages class="h-4 w-4 shrink-0" />
+                        <span>{langOpt.title}</span>
+                      </div>
+                      <div class="text-[11px] opacity-80 mt-1">{langOpt.desc}</div>
+                    </button>
+                  )}
+                </For>
               </div>
             </div>
 
@@ -391,7 +461,9 @@ export default function ExportsPage() {
               {downloading()
                 ? t().exports.generatingBtn
                 : t().exports.downloadBtn(
-                    includeZip() ? t().exports.downloadZipLabel : format().toUpperCase()
+                    `${
+                      includeZip() ? t().exports.downloadZipLabel : format().toUpperCase()
+                    } · ${exportLangShort()}`
                   )}
             </button>
           </div>

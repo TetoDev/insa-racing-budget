@@ -11,10 +11,11 @@ import {
   type Accessor,
   type ParentProps
 } from "solid-js";
-import { isServer } from "solid-js/web";
+import { getRequestEvent, isServer } from "solid-js/web";
 import type { PublicUser, SeasonStatus } from "~/lib/constants";
 import {
   getDictionary,
+  parseLocaleFromCookieHeader,
   readLocaleFromDocumentCookie,
   writeLocaleDocumentCookie,
   type Locale,
@@ -22,6 +23,7 @@ import {
 } from "~/lib/i18n";
 import {
   applyThemeToDocument,
+  parseThemeFromCookieHeader,
   readThemeFromDocumentCookie,
   writeThemeDocumentCookie,
   type Theme
@@ -76,13 +78,16 @@ export function AppProvider(props: ParentProps) {
   const [manualLocale, setManualLocale] = createSignal<Locale | null>(null);
   const [manualTheme, setManualTheme] = createSignal<Theme | null>(null);
 
+  const ssrCookieHeader = () =>
+    isServer ? getRequestEvent()?.request.headers.get("cookie") : undefined;
+
   const locale = (): Locale => {
     const manual = manualLocale();
     if (manual) return manual;
     const fromServer = contextResource()?.locale;
     if (fromServer) return fromServer;
-    if (!isServer) return readLocaleFromDocumentCookie();
-    return "en";
+    if (isServer) return parseLocaleFromCookieHeader(ssrCookieHeader());
+    return readLocaleFromDocumentCookie();
   };
 
   const setLocale = (next: Locale) => {
@@ -98,8 +103,8 @@ export function AppProvider(props: ParentProps) {
     if (manual) return manual;
     const fromServer = contextResource()?.theme;
     if (fromServer) return fromServer;
-    if (!isServer) return readThemeFromDocumentCookie();
-    return "light";
+    if (isServer) return parseThemeFromCookieHeader(ssrCookieHeader());
+    return readThemeFromDocumentCookie();
   };
 
   const setTheme = (next: Theme) => {

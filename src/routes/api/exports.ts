@@ -29,7 +29,7 @@ export async function POST(event: APIEvent) {
       action: "budget_exported",
       targetType: "export",
       targetCode: result.filename,
-      summary: `Exported budget (${parsed.data.format.toUpperCase()}${parsed.data.includeZip ? " + ZIP docs" : ""}) covering ${parsed.data.sections.length} section(s)`
+      summary: `Exported budget (${parsed.data.format.toUpperCase()}${parsed.data.includeZip ? " + ZIP docs" : ""}, ${(parsed.data.locale ?? "en").toUpperCase()}) covering ${parsed.data.sections.length} section(s)`
     });
 
     return new Response(new Uint8Array(result.buffer), {

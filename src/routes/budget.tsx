@@ -267,6 +267,7 @@ export default function BudgetPage() {
     if (fromDate()) params.set("from", fromDate());
     if (toDate()) params.set("to", toDate());
     params.set("sections", activeTab());
+    params.set("lang", locale());
     return `/exports?${params.toString()}`;
   };
 
@@ -695,6 +696,7 @@ export default function BudgetPage() {
                   if (fromDate()) params.set("from", fromDate());
                   if (toDate()) params.set("to", toDate());
                   params.set("sections", "summary,financial_statement,by_department,entries_by_category");
+                  params.set("lang", locale());
                   return `/exports?${params.toString()}`;
                 };
 

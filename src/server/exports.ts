@@ -1006,6 +1006,51 @@ async function generateXlsxBuffer(
   return Buffer.from(out);
 }
 
+function formatCsvCellValue(
+  raw: string | number,
+  colOneBased: number,
+  data: SectionTableData,
+  locale: Locale,
+  delimiter: string
+): string | number {
+  if (locale !== "fr" || delimiter !== ";") return raw;
+  const isNumericCol =
+    Boolean(data.eurCols?.includes(colOneBased)) || Boolean(data.pctCols?.includes(colOneBased));
+  if (!isNumericCol) return raw;
+  if (typeof raw === "number" && Number.isFinite(raw)) {
+    return String(raw).replace(".", ",");
+  }
+  if (typeof raw === "string") {
+    // Convert plain decimals (or rate strings like "1240.00 / mois") for French Excel compatibility.
+    return raw.replace(/^(-?\d+)\.(\d+)(?=$|\s*\/)/, "$1,$2");
+  }
+  return raw;
+}
+
+function buildSectionCsvRows(
+  data: SectionTableData,
+  locale: Locale,
+  delimiter: string,
+  totalLabel: string
+): Array<Array<string | number>> {
+  const rowsWithTotal =
+    data.sumCols && data.sumCols.length > 0 && data.rows.length > 0
+      ? [
+          ...data.rows,
+          computeTotalsRow(
+            data.rows,
+            data.headers.length,
+            data.sumCols,
+            data.totalLabelCol ?? 1,
+            totalLabel
+          )
+        ]
+      : data.rows;
+  return rowsWithTotal.map(row =>
+    row.map((cell, idx) => formatCsvCellValue(cell, idx + 1, data, locale, delimiter))
+  );
+}
+
 function generateCsvFiles(
   snapshot: BudgetSnapshot,
   sections: BudgetSectionId[],
@@ -1016,20 +1061,8 @@ function generateCsvFiles(
   const exp = getDictionary(locale).exportReport;
   return sections.map(sectionId => {
     const data = getSectionTabularData(sectionId, snapshot, locale);
-    const rowsWithTotal =
-      data.sumCols && data.sumCols.length > 0 && data.rows.length > 0
-        ? [
-            ...data.rows,
-            computeTotalsRow(
-              data.rows,
-              data.headers.length,
-              data.sumCols,
-              data.totalLabelCol ?? 1,
-              exp.totalRowLabel
-            )
-          ]
-        : data.rows;
-    const csv = BOM + buildCsvLines(data.headers, rowsWithTotal, delimiter);
+    const formattedRows = buildSectionCsvRows(data, locale, delimiter, exp.totalRowLabel);
+    const csv = BOM + buildCsvLines(data.headers, formattedRows, delimiter);
     return {
       filename: `${slugifyFilename(snapshot.season.yearCode)}_${sectionId}.csv`,
       content: Buffer.from(csv, "utf8")
@@ -1047,23 +1080,11 @@ function generateSingleCsvBuffer(
   const exp = getDictionary(locale).exportReport;
   const blocks = sections.map(sectionId => {
     const data = getSectionTabularData(sectionId, snapshot, locale);
-    const rowsWithTotal =
-      data.sumCols && data.sumCols.length > 0 && data.rows.length > 0
-        ? [
-            ...data.rows,
-            computeTotalsRow(
-              data.rows,
-              data.headers.length,
-              data.sumCols,
-              data.totalLabelCol ?? 1,
-              exp.totalRowLabel
-            )
-          ]
-        : data.rows;
+    const formattedRows = buildSectionCsvRows(data, locale, delimiter, exp.totalRowLabel);
     let block =
       `${escapeCsvCell(data.title, delimiter)}\r\n` +
       `${escapeCsvCell(data.description, delimiter)}\r\n` +
-      buildCsvLines(data.headers, rowsWithTotal, delimiter);
+      buildCsvLines(data.headers, formattedRows, delimiter);
     if (data.extraNotes && data.extraNotes.rows.length > 0) {
       block +=
         `\r\n\r\n${escapeCsvCell(data.extraNotes.title, delimiter)}\r\n` +
@@ -1731,7 +1752,7 @@ export async function generateBudgetExport(params: ExportRequestParams): Promise
   const validOrder = BUDGET_SECTIONS.map(s => s.id).filter(id => params.sections.includes(id));
   const selectedSections = validOrder.length > 0 ? validOrder : (["summary"] as BudgetSectionId[]);
   const locale = normalizeLocale(params.locale ?? "en");
-  const baseSlug = `INSA_Racing_Budget_${slugifyFilename(snapshot.season.yearCode)}_${new Date().toISOString().slice(0, 10)}`;
+  const baseSlug = `INSA_Racing_Budget_${slugifyFilename(snapshot.season.yearCode)}_${locale.toUpperCase()}_${new Date().toISOString().slice(0, 10)}`;
 
   if (params.includeZip) {
     let primaryFiles: Array<{ filename: string; content: Buffer }>;

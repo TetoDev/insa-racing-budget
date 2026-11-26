@@ -275,7 +275,7 @@ describe("crypto, upload validation, and budget export builders", () => {
       ratePeriod: "month",
       locale: "fr"
     });
-    expect(xlsxRes.filename).toMatch(/\.xlsx$/);
+    expect(xlsxRes.filename).toMatch(/^INSA_Racing_Budget_26_FR_.*\.xlsx$/);
     const wb = new ExcelJS.Workbook();
     await wb.xlsx.load(Uint8Array.from(xlsxRes.buffer).buffer);
     const sheetNames = wb.worksheets.map(s => s.name);
@@ -294,6 +294,7 @@ describe("crypto, upload validation, and budget export builders", () => {
       ratePeriod: "month",
       locale: "en"
     });
+    expect(enXlsxRes.filename).toMatch(/^INSA_Racing_Budget_26_EN_.*\.xlsx$/);
     const enWb = new ExcelJS.Workbook();
     await enWb.xlsx.load(Uint8Array.from(enXlsxRes.buffer).buffer);
     const enSheetNames = enWb.worksheets.map(s => s.name);
@@ -340,6 +341,25 @@ describe("crypto, upload validation, and budget export builders", () => {
     expect(csvText).toContain("26-ENT-001");
     expect(csvText).toContain("TOTAL");
 
+    const frCsvRes = await generateBudgetExport({
+      seasonId: "season-2026",
+      format: "csv",
+      includeZip: false,
+      csvDelimiter: ";",
+      sections: ["financial_statement", "by_department", "all_spendings"],
+      ratePeriod: "month",
+      locale: "fr"
+    });
+    expect(frCsvRes.filename).toMatch(/^INSA_Racing_Budget_26_FR_.*\.csv$/);
+    const frCsvText = frCsvRes.buffer.toString("utf8");
+    expect(frCsvText).toContain("Catégorie Charges;Poste de dépense;Charges (EUR)");
+    expect(frCsvText).toContain("Budget alloué (EUR)");
+    expect(frCsvText).toContain("1240,00");
+    expect(frCsvText).toContain("1510,00");
+    expect(frCsvText).toContain("2500,00");
+    expect(frCsvText).toContain("3300,00");
+    expect(frCsvText).toContain(";100;1;0;0");
+
     const pdfRes = await generateBudgetExport({
       seasonId: "season-2026",
       format: "pdf",
@@ -349,6 +369,7 @@ describe("crypto, upload validation, and budget export builders", () => {
       ratePeriod: "month",
       locale: "fr"
     });
+    expect(pdfRes.filename).toMatch(/^INSA_Racing_Budget_26_FR_.*\.pdf$/);
     expect(pdfRes.buffer.subarray(0, 5).toString("ascii")).toBe("%PDF-");
     expect(pdfRes.buffer.length).toBeGreaterThan(2000);
 
