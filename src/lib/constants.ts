@@ -85,6 +85,7 @@ export const ENTRY_STATUS_LABELS: Record<EntryStatus, string> = {
 
 export const BUDGET_SECTIONS = [
   { id: "summary", label: "Dashboard & Summary" },
+  { id: "financial_statement", label: "Charges & Income Statement (Bilan)" },
   { id: "by_department", label: "Spendings by Department" },
   { id: "by_timeframe", label: "Spendings by Timeframe" },
   { id: "all_spendings", label: "All Spendings" },

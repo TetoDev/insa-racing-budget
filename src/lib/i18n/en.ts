@@ -142,6 +142,7 @@ export const en = {
     } satisfies Record<EntryStatus, string>,
     budgetSections: {
       summary: "Dashboard & Summary",
+      financial_statement: "Charges & Income Statement",
       by_department: "Spendings by Department",
       by_timeframe: "Spendings by Timeframe",
       all_spendings: "All Spendings",
@@ -565,6 +566,9 @@ export const en = {
     csvCommaLabel: "— Standard",
     csvCommaName: "Comma",
     step2Heading: "2. Select Budget Sections to Include",
+    externalPresetBtn: "External / Sponsor Report",
+    externalPresetHint:
+      "Tip: Select \"External / Sponsor Report\" for a concise reader-friendly declaration (Executive Summary, Charges & Income Statement, Spendings by Department, and Funding Sources).",
     zipTitle: "Create a Structured .ZIP Bundle with Invoices & Supporting Documents",
     zipDescPrefix: "Packages your exported report alongside organized folders (",
     zipDescSuffix: ") containing every linked invoice, fee receipt, and supporting document.",
@@ -579,7 +583,20 @@ export const en = {
     pageTitle: "Budget & Analytics",
     heading: "Season Budget (EUR TTC)",
     subtitle:
-      "All 9 budget views across inflows, department envelopes, provisional orders, final spendings, and cashflow trajectory.",
+      "All budget views across inflows, Charges & Income statement, department envelopes, provisional orders, final spendings, and cashflow trajectory.",
+    financialStatement: {
+      title: "Charges & Income Statement (External Accounting View)",
+      subtitle:
+        "Side-by-side summary grouping expenses (Charges) and funding sources (Produits) into standard association categories for sponsors, INSA, and banks.",
+      includeProvisionalLabel: "Include committed orders & pledged inflows",
+      confirmedOnlyLabel: "Confirmed / Paid only",
+      exportThisBtn: "Export Statement (.xlsx / .pdf)",
+      reconciliationPrefix: "Net period result:",
+      cashReconciliation: (opening: string, actualCash: string, projectedCash: string) =>
+        `Carry-over opening balance: ${opening} · Actual cash balance (confirmed only): ${actualCash} · Projected season balance (including pending items): ${projectedCash}`,
+      mappingNote:
+        "Classification: Administratives covers Premises (Local), Secretariat (IT, banking, travel, admin), and Communication; Financières covers Debt; Techniques groups Powertrain, Structure (Chassis & Ergonomics), Suspensions, Mechatronics (Electronics), Bodywork (Aero), and Tooling."
+    },
     exportBtn: "Export Budget",
     deptEnvelopesBtn: "Dept Envelopes",
     logEntryBtn: "Log Money Entry",
@@ -935,35 +952,131 @@ export const en = {
     archiveSeasonBtn: "Archive Season"
   },
   exportReport: {
-    pdfTitle: "INSA Racing — Budget Declaration Report",
+    pdfTitle: "INSA Racing — Financial & Budget Report",
+    pdfSubtitle: "INSA Rouen Racing · Student Formula Student Electric Team (Non-Profit Association)",
     pdfMeta: (seasonName: string, startDate: string, deadlineDate: string, generated: string) =>
-      `Season: ${seasonName} (${startDate} to ${deadlineDate})   |   Generated: ${generated}   |   Currency: EUR (TTC)`,
+      `Season: ${seasonName} (${startDate} to ${deadlineDate})   |   Generated: ${generated}   |   All amounts in EUR incl. VAT (TTC)`,
     pdfKpis: (cashLeft: string, projected: string, finalSpend: string, provSpend: string) =>
-      `Actual Cash Left: ${cashLeft}   |   Projected Balance: ${projected}   |   Final Spendings: ${finalSpend}   |   Provisional Spendings: ${provSpend}`,
-    pdfEmptySection: "No records in this section.",
-    xlsxGenerated: (dateStr: string) => `Generated: ${dateStr}`,
+      `Actual Cash Balance: ${cashLeft}   |   Projected End Balance: ${projected}   |   Paid Expenses: ${finalSpend}   |   Pending Orders: ${provSpend}`,
+    pdfKpiCards: {
+      cashLeftLabel: "Actual Cash in Bank",
+      cashLeftHelp: "Opening + cash received - paid invoices",
+      projectedLabel: "Projected Balance",
+      projectedHelp: "Includes pending pledges & active orders",
+      inflowsLabel: "Total Funding (Income)",
+      inflowsHelp: (conf: string, prov: string) => `${conf} received · ${prov} pledged`,
+      outflowsLabel: "Total Expenses (Charges)",
+      outflowsHelp: (paid: string, ord: string) => `${paid} invoiced · ${ord} ordered`
+    },
+    pdfReaderGuideTitle: "Quick Guide for External Readers",
+    pdfReaderGuideItems: [
+      "Confirmed / Final: Money actually received in bank or paid with a final supplier invoice.",
+      "Provisional / Pledged: Signed grants/sponsors not yet wired, or approved purchase orders awaiting invoice.",
+      "Subsystems (e.g. Chassis, Powertrain, Aero): Engineering poles of the student electric race car."
+    ],
+    pdfPageFooter: (page: number, total: number) =>
+      `INSA Rouen Racing — Budget Report (EUR TTC)   |   Page ${page} / ${total}`,
+    pdfEmptySection: "No records recorded in this section for the selected period.",
+    xlsxGenerated: (dateStr: string) => `Generated: ${dateStr} · All amounts in EUR incl. VAT (TTC)`,
+    totalRowLabel: "TOTAL",
+    financialStatement: {
+      title: "Charges & Income Statement",
+      tabName: "Charges & Income",
+      sectionDesc:
+        "Standard two-column association statement comparing Expenses (Charges) against Funding Sources (Produits), matching official external budget declarations.",
+      sheetBanner: (seasonName: string, startDate: string, deadlineDate: string) =>
+        `INSA ROUEN RACING Budget — ${seasonName} (${startDate} to ${deadlineDate})`,
+      chargesHeader: "Charges (Expenses)",
+      produitsHeader: "Produits (Income & Funding)",
+      totalLabel: "Total:",
+      csvHeaders: [
+        "Charges Group",
+        "Expense Category",
+        "Expenses (EUR)",
+        "Income Group",
+        "Funding Source",
+        "Income & Funding (EUR)"
+      ],
+      groups: {
+        administratives: "Administrative",
+        financieres: "Financial",
+        techniques: "Technical",
+        aides: "Institutional Grants",
+        concours: "Contests & Prizes",
+        sponsoring: "Patronage & Sponsoring",
+        propre: "Own Funds & Member Contributions"
+      },
+      chargeLines: {
+        local: "Premises & Facility (Local)",
+        secretariat: "Secretariat, IT & Admin Fees",
+        communication: "Communication & Events",
+        dettes: "Debt & Loan Repayments",
+        powertrain: "Powertrain (Motor & Accumulator)",
+        structure: "Structure (Chassis & Ergonomics)",
+        suspensions: "Suspensions & Brakes",
+        mecatronique: "Mechatronics & Electronics",
+        carrosserie: "Bodywork & Aerodynamics",
+        outillage: "Workshop & Fabrication Tooling"
+      },
+      emptyGroupItem: "None recorded",
+      reconciliationTitle: "Balance Reconciliation & Notes for External Readers",
+      realizedOnlyLabel: "Realized Cash Flow Only (Confirmed received - Invoiced paid)",
+      withProvisionalLabel: "Full Budget Scope (Confirmed + Pledged income - Paid + Ordered)",
+      openingCarryOverLabel: "Opening Balance (Carry-over from previous period)",
+      netPeriodResultLabel: "Net Result (Income minus Expenses)",
+      endingActualCashLabel: "Actual Cash Remaining (Opening + Realized Net Result)",
+      endingProjectedCashLabel: "Projected Balance (Opening + Full Budget Net Result)",
+      mappingNote:
+        "Note: Highlighted rows under Patronage & Sponsoring indicate private/foundation sponsorships and fundraising. Structure groups Chassis and Cockpit/Ergonomics expenses."
+    },
     summary: {
       title: "Dashboard & Summary",
-      headers: ["Metric", "Value (EUR)", "Count / Notes"],
-      rowSeasonName: "Season Name",
-      rowOpeningBalance: "Opening Balance",
-      rowConfirmedEntries: "Confirmed Money Entries",
-      rowConfirmedCount: (n: number) => `${n} confirmed`,
-      rowProvisionalEntries: "Provisional Money Entries",
-      rowProvisionalCount: (n: number) => `${n} provisional`,
-      rowFinalSpendings: "Final Spendings (Invoiced)",
-      rowInvoicedCount: (n: number) => `${n} invoiced`,
-      rowProvisionalSpendings: "Provisional Spendings (Orders)",
-      rowActiveOrdersCount: (n: number) => `${n} active orders`,
-      rowActualCashLeft: "Actual Cash Left",
-      rowActualCashNote: "Opening + Confirmed Entries - Final Spendings",
-      rowProjectedBalance: "Projected Balance",
-      rowProjectedNote: "Includes Provisional Entries & Orders",
-      rowOpenRequests: "Open Requests (Review / Counter / Stage 2)",
-      rowPendingCount: (n: number) => `${n} pending`
+      sectionDesc:
+        "High-level overview of cash currently available in the bank, expected end-of-season balance, total funding received/pledged, and verified expenses.",
+      headers: ["Financial Indicator", "Amount / Value (EUR)", "Count & Plain-Language Explanation"],
+      rowSeasonName: "Reporting Period / Season",
+      rowOpeningBalance: "Opening Carry-Over Balance",
+      rowOpeningNote: "Available funds carried over on season start date",
+      rowConfirmedEntries: "Confirmed Income Received (Inflows)",
+      rowConfirmedCount: (n: number) => `${n} confirmed bank inflow(s) already received`,
+      rowProvisionalEntries: "Pledged / Expected Income (Provisional)",
+      rowProvisionalCount: (n: number) =>
+        `${n} announced grant(s) or sponsor commitment(s) not yet received`,
+      rowFinalSpendings: "Final Paid Expenses (Invoiced)",
+      rowInvoicedCount: (n: number) => `${n} completed purchase(s) backed by a supplier invoice`,
+      rowProvisionalSpendings: "Committed Purchase Orders (Pending Invoice)",
+      rowActiveOrdersCount: (n: number) =>
+        `${n} approved order(s) placed with suppliers, final invoice pending`,
+      rowActualCashLeft: "Actual Cash Available Now",
+      rowActualCashNote: "Opening Balance + Confirmed Income - Final Paid Expenses",
+      rowProjectedBalance: "Projected End-of-Period Balance",
+      rowProjectedNote:
+        "Expected cash balance once all pledged funding arrives and active orders are invoiced",
+      rowNetPeriodResult: "Net Period Operating Result (Confirmed + Pledged)",
+      rowNetPeriodResultNote: "Total Funding (Confirmed + Pledged) minus Total Spendings (Invoiced + Ordered)",
+      rowOpenRequests: "Internal Requests Under Review (Not Ordered)",
+      rowPendingCount: (n: number) => `${n} request(s) awaiting internal approval — not yet committed`,
+      glossaryTitle: "How to Read This Budget Report (For External Readers)",
+      glossaryRows: [
+        [
+          "Actual Cash vs. Projected Balance",
+          "Actual Cash counts only bank-received income and invoiced expenses. Projected Balance adds pledged grants/sponsors not yet wired and active supplier orders awaiting invoice."
+        ],
+        [
+          "EUR TTC (VAT Included)",
+          "As a student non-profit association, INSA Rouen Racing does not reclaim VAT; all prices reflect final amounts paid including taxes, shipping, and import duties."
+        ],
+        [
+          "Engineering Subsystems",
+          "Technical costs correspond to subsystems of the Formula Student electric car (Powertrain, Chassis/Structure, Suspension, Electronics/Mechatronics, Aerodynamics/Bodywork, Ergonomics, Workshop & Admin)."
+        ]
+      ]
     },
     byDepartment: {
       title: "Spendings by Department",
+      tabName: "Spendings by Dept",
+      sectionDesc:
+        "Breakdown of expenses across each technical car team pole and logistics, comparing paid invoices, active orders, and allocated budget limits.",
       headers: [
         "Code",
         "Department",
@@ -981,6 +1094,9 @@ export const en = {
     },
     byTimeframe: {
       title: (periodLabel: string) => `Spendings by Timeframe (${periodLabel})`,
+      tabName: "By Timeframe",
+      sectionDesc:
+        "Chronological cash inflows and outflows by period so readers can track when grants arrived and when vehicle purchases took place.",
       headers: [
         "Period",
         "Final Spendings (EUR)",
@@ -992,6 +1108,9 @@ export const en = {
     },
     allSpendings: {
       title: "All Spendings (Final Invoiced)",
+      tabName: "All Spendings (Final Invoiced)",
+      sectionDesc:
+        "Complete itemized register of finalized expenses with supplier invoices, breaking down item base price, shipping, and customs/import fees.",
       headers: [
         "Request ID",
         "Department",
@@ -1010,6 +1129,9 @@ export const en = {
     },
     provisionalSpendings: {
       title: "Provisional Spendings (Active Orders)",
+      tabName: "Pending Orders",
+      sectionDesc:
+        "Approved supplier orders already placed or in transit whose final supplier invoice has not yet been uploaded.",
       headers: [
         "Request ID",
         "Department",
@@ -1027,6 +1149,9 @@ export const en = {
     },
     provisionalEntries: {
       title: "Provisional Entries",
+      tabName: "Pledged Funding",
+      sectionDesc:
+        "Announced or pledged grants, sponsorships, and fundraising expected by the association but not yet credited to the bank account.",
       headers: [
         "Entry ID",
         "Category",
@@ -1039,6 +1164,9 @@ export const en = {
     },
     allEntries: {
       title: "All Money Entries",
+      tabName: "All Funding Entries",
+      sectionDesc:
+        "Complete register of all funding inflows (institutional grants, sponsors, contests, member contributions), distinguishing received vs. pledged amounts.",
       headers: [
         "Entry ID",
         "Status",
@@ -1055,6 +1183,9 @@ export const en = {
     },
     entriesByCategory: {
       title: "Entries by Category",
+      tabName: "Entries by Category",
+      sectionDesc:
+        "Summary of association funding grouped by source type (Sponsorship, FSDIE, INSA, Donors, Partnerships).",
       headers: [
         "Category",
         "Confirmed Entries (EUR)",
@@ -1067,6 +1198,9 @@ export const en = {
     },
     cashflowRates: {
       title: (periodLabel: string) => `Money Left & Cashflow Rates (${periodLabel})`,
+      tabName: "Cashflow & Balances",
+      sectionDesc:
+        "Period-by-period cumulative bank balance trajectory showing whether income kept pace with expenses over time.",
       headers: [
         "Period",
         "Confirmed Inflow (EUR)",
@@ -1075,8 +1209,9 @@ export const en = {
         "Cumulative Actual Balance (EUR)",
         "Cumulative Projected Balance (EUR)"
       ],
-      summaryRowLabel: (count: number, unitNoun: string) => `SUMMARY (${count} ${unitNoun}s)`,
-      perPeriodSuffix: "/p"
+      summaryRowLabel: (count: number, unitNoun: string) =>
+        `PERIOD AVERAGE (${count} ${count === 1 ? unitNoun : `${unitNoun}s`})`,
+      perPeriodSuffix: (unitNoun: string) => ` / ${unitNoun}`
     }
   },
   serverErrors: {

@@ -271,44 +271,86 @@ describe("crypto, upload validation, and budget export builders", () => {
       format: "xlsx",
       includeZip: false,
       csvDelimiter: ";",
-      sections: ["summary", "all_spendings", "entries_by_category"],
-      ratePeriod: "month"
+      sections: ["summary", "financial_statement", "all_spendings", "entries_by_category"],
+      ratePeriod: "month",
+      locale: "fr"
     });
     expect(xlsxRes.filename).toMatch(/\.xlsx$/);
     const wb = new ExcelJS.Workbook();
     await wb.xlsx.load(Uint8Array.from(xlsxRes.buffer).buffer);
     const sheetNames = wb.worksheets.map(s => s.name);
-    expect(sheetNames).toContain("Dashboard & Summary");
-    expect(sheetNames).toContain("All Spendings (Final Invoiced)");
-    expect(sheetNames).toContain("Entries by Category");
-    expect(sheetNames).not.toContain("Provisional Spendings (Active O");
+    expect(sheetNames).toContain("Tableau de bord & Synthèse");
+    expect(sheetNames).toContain("Bilan Charges & Produits");
+    expect(sheetNames).toContain("Dépenses facturées");
+    expect(sheetNames).toContain("Entrées par catégorie");
+
+    // Verify EN worksheet names preserve compatibility & Totals + Glossary rows are present
+    const enXlsxRes = await generateBudgetExport({
+      seasonId: "season-2026",
+      format: "xlsx",
+      includeZip: false,
+      csvDelimiter: ";",
+      sections: ["summary", "financial_statement", "all_spendings", "entries_by_category"],
+      ratePeriod: "month",
+      locale: "en"
+    });
+    const enWb = new ExcelJS.Workbook();
+    await enWb.xlsx.load(Uint8Array.from(enXlsxRes.buffer).buffer);
+    const enSheetNames = enWb.worksheets.map(s => s.name);
+    expect(enSheetNames).toContain("Dashboard & Summary");
+    expect(enSheetNames).toContain("Charges & Income");
+    expect(enSheetNames).toContain("All Spendings (Final Invoiced)");
+    expect(enSheetNames).toContain("Entries by Category");
+    expect(enSheetNames).not.toContain("Provisional Spendings (Active O");
+
+    // Verify Bilan Charges & Produits sheet matches photo structure & Excel =SUM formulas
+    const bilanWs = wb.getWorksheet("Bilan Charges & Produits")!;
+    expect(String(bilanWs.getCell("A1").value)).toContain("Budget INSA ROUEN RACING");
+    expect(bilanWs.getCell("A2").value).toBe("Charges");
+    expect(bilanWs.getCell("D2").value).toBe("Produits");
+    const bilanTotalRow = bilanWs.lastRow!;
+    const sumCells = [
+      bilanWs.getColumn(2).values,
+      bilanWs.getColumn(3).values
+    ];
+    expect(sumCells[0].some(v => v === "Total :")).toBe(true);
+    expect(
+      sumCells[1].some(
+        v => v && typeof v === "object" && "formula" in v && String(v.formula).startsWith("SUM(")
+      )
+    ).toBe(true);
+    expect(bilanTotalRow).toBeDefined();
 
     const csvRes = await generateBudgetExport({
       seasonId: "season-2026",
       format: "csv",
       includeZip: false,
       csvDelimiter: ";",
-      sections: ["by_department", "all_spendings", "all_entries"],
+      sections: ["financial_statement", "by_department", "all_spendings", "all_entries"],
       ratePeriod: "month"
     });
     const csvText = csvRes.buffer.toString("utf8");
     expect(csvText.charCodeAt(0)).toBe(0xfeff);
+    expect(csvText).toContain("Charges Group");
     expect(csvText).toContain("Allocated Budget (EUR)");
     expect(csvText).toContain("Remaining Projected (EUR)");
     expect(csvText).toContain("Utilization Projected (%)");
     expect(csvText).toContain("26-AERO-004");
     expect(csvText).toContain("Aerodynamics / Rear Wing");
     expect(csvText).toContain("26-ENT-001");
+    expect(csvText).toContain("TOTAL");
 
     const pdfRes = await generateBudgetExport({
       seasonId: "season-2026",
       format: "pdf",
       includeZip: false,
       csvDelimiter: ";",
-      sections: ["summary", "by_department", "cashflow_rates"],
-      ratePeriod: "month"
+      sections: ["summary", "financial_statement", "by_department", "all_spendings", "cashflow_rates"],
+      ratePeriod: "month",
+      locale: "fr"
     });
     expect(pdfRes.buffer.subarray(0, 5).toString("ascii")).toBe("%PDF-");
+    expect(pdfRes.buffer.length).toBeGreaterThan(2000);
 
     const zipRes = await generateBudgetExport({
       seasonId: "season-2026",

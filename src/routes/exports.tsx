@@ -63,6 +63,13 @@ export default function ExportsPage() {
     );
   };
 
+  const EXTERNAL_REPORT_SECTIONS: BudgetSectionId[] = [
+    "summary",
+    "financial_statement",
+    "by_department",
+    "entries_by_category"
+  ];
+
   async function handleExport(e: SubmitEvent) {
     e.preventDefault();
     setError("");
@@ -283,7 +290,15 @@ export default function ExportsPage() {
           <div class="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 shadow-xs space-y-4">
             <div class="flex items-center justify-between">
               <h2 class="text-base font-bold text-slate-900 dark:text-slate-100">{t().exports.step2Heading}</h2>
-              <div class="flex gap-2 text-xs">
+              <div class="flex flex-wrap gap-2 text-xs">
+                <button
+                  type="button"
+                  onClick={() => setSelectedSections(EXTERNAL_REPORT_SECTIONS)}
+                  class="rounded-md bg-teal-50 dark:bg-teal-950/50 border border-teal-200 dark:border-teal-800 px-2.5 py-0.5 font-semibold text-teal-700 dark:text-teal-300 hover:bg-teal-100 dark:hover:bg-teal-900/60 cursor-pointer"
+                >
+                  {t().exports.externalPresetBtn}
+                </button>
+                <span class="text-slate-300 dark:text-slate-600">|</span>
                 <button
                   type="button"
                   onClick={() => setSelectedSections(BUDGET_SECTIONS.map(s => s.id))}
@@ -323,6 +338,10 @@ export default function ExportsPage() {
                 )}
               </For>
             </div>
+
+            <p class="text-xs text-slate-500 dark:text-slate-400">
+              {t().exports.externalPresetHint}
+            </p>
           </div>
 
           {/* Structured ZIP Bundle Option */}

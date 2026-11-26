@@ -132,6 +132,7 @@ export const fr: TranslationDict = {
     },
     budgetSections: {
       summary: "Tableau de bord & Résumé",
+      financial_statement: "Bilan Charges & Produits",
       by_department: "Dépenses par pôle",
       by_timeframe: "Dépenses par période",
       all_spendings: "Toutes les dépenses",
@@ -555,6 +556,9 @@ export const fr: TranslationDict = {
     csvCommaLabel: "— Standard",
     csvCommaName: "Virgule",
     step2Heading: "2. Sections budgétaires à inclure",
+    externalPresetBtn: "Rapport externe (Recommandé)",
+    externalPresetHint:
+      "Conseil : cliquez sur « Rapport externe » pour générer un dossier clair destiné aux partenaires, banques ou jurys (Synthèse, Bilan Charges & Produits, Dépenses par pôle et Sources de financement).",
     zipTitle: "Créer une archive .ZIP structurée avec factures et pièces justificatives",
     zipDescPrefix: "Inclut votre rapport exporté dans des dossiers structurés (",
     zipDescSuffix: ") contenant chaque facture, justificatif de frais et document lié.",
@@ -569,7 +573,20 @@ export const fr: TranslationDict = {
     pageTitle: "Budget & Analyses",
     heading: "Budget de saison (EUR TTC)",
     subtitle:
-      "Les 9 vues budgétaires : entrées financières, enveloppes par pôle, commandes prévisionnelles, dépenses finales et courbe de trésorerie.",
+      "Toutes les vues budgétaires : bilan Charges & Produits, entrées financières, enveloppes par pôle, commandes prévisionnelles, dépenses finales et courbe de trésorerie.",
+    financialStatement: {
+      title: "Bilan Charges & Produits (Format externe)",
+      subtitle:
+        "Tableau synthétique à deux volets regroupant les dépenses (Charges) et financements (Produits) selon les postes comptables associatifs pour partenaires, écoles et banques.",
+      includeProvisionalLabel: "Inclure engagements & prévisionnels",
+      confirmedOnlyLabel: "Réalisé (encaissé / facturé) uniquement",
+      exportThisBtn: "Exporter ce bilan (.xlsx / .pdf)",
+      reconciliationPrefix: "Résultat net de la période :",
+      cashReconciliation: (opening: string, actualCash: string, projectedCash: string) =>
+        `Solde initial de report : ${opening} · Trésorerie réelle (confirmé uniquement) : ${actualCash} · Solde prévisionnel (engagements inclus) : ${projectedCash}`,
+      mappingNote:
+        "Ventilation : Administratives regroupe Local, Secrétariat (IT, frais bancaires, déplacements, gestion) et Communication ; Financières regroupe Dettes ; Techniques rassemble Powertrain, Structure (Châssis & Ergonomie), Suspensions, Mécatronique (Électronique), Carrosserie (Aéro) et Outillage."
+    },
     exportBtn: "Exporter le budget",
     deptEnvelopesBtn: "Enveloppes pôles",
     logEntryBtn: "Nouvelle entrée d'argent",
@@ -926,35 +943,130 @@ export const fr: TranslationDict = {
     archiveSeasonBtn: "Archiver la saison"
   },
   exportReport: {
-    pdfTitle: "INSA Racing — Rapport de déclaration budgétaire",
+    pdfTitle: "INSA Racing — Rapport Financier & Budgétaire",
+    pdfSubtitle: "INSA Rouen Racing · Association étudiante Formula Student électrique",
     pdfMeta: (seasonName: string, startDate: string, deadlineDate: string, generated: string) =>
-      `Saison : ${seasonName} (${startDate} au ${deadlineDate})   |   Généré le : ${generated}   |   Devise : EUR (TTC)`,
+      `Période : ${seasonName} (${startDate} au ${deadlineDate})   |   Généré le : ${generated}   |   Montants en EUR TTC`,
     pdfKpis: (cashLeft: string, projected: string, finalSpend: string, provSpend: string) =>
-      `Trésorerie réelle : ${cashLeft}   |   Solde prévis. : ${projected}   |   Dépenses finales : ${finalSpend}   |   Dépenses prévis. : ${provSpend}`,
-    pdfEmptySection: "Aucun enregistrement dans cette section.",
-    xlsxGenerated: (dateStr: string) => `Généré le : ${dateStr}`,
+      `Trésorerie réelle : ${cashLeft}   |   Solde prévisionnel : ${projected}   |   Dépenses payées : ${finalSpend}   |   Commandes en cours : ${provSpend}`,
+    pdfKpiCards: {
+      cashLeftLabel: "Trésorerie réelle en banque",
+      cashLeftHelp: "Report initial + recettes encaissées - factures payées",
+      projectedLabel: "Solde prévisionnel final",
+      projectedHelp: "Intègre les subventions/sponsors attendus et commandes",
+      inflowsLabel: "Total Produits (Financements)",
+      inflowsHelp: (conf: string, prov: string) => `${conf} encaissés · ${prov} attendus`,
+      outflowsLabel: "Total Charges (Dépenses)",
+      outflowsHelp: (paid: string, ord: string) => `${paid} facturées · ${ord} commandées`
+    },
+    pdfReaderGuideTitle: "Guide de lecture pour personnes extérieures à l'équipe",
+    pdfReaderGuideItems: [
+      "Confirmé / Facturé : fonds effectivement encaissés en banque ou achats réglés avec facture.",
+      "Prévisionnel / Commandé : aides ou sponsoring annoncés non encore virés, ou commandes passées en attente de facture.",
+      "Pôles techniques (Powertrain, Châssis, Aéro...) : sous-ensembles d'ingénierie de la monoplace électrique."
+    ],
+    pdfPageFooter: (page: number, total: number) =>
+      `INSA Rouen Racing — Rapport Budgétaire (EUR TTC)   |   Page ${page} / ${total}`,
+    pdfEmptySection: "Aucun enregistrement sur cette période.",
+    xlsxGenerated: (dateStr: string) => `Généré le : ${dateStr} · Montants en EUR TTC`,
+    totalRowLabel: "TOTAL",
+    financialStatement: {
+      title: "Bilan Charges & Produits",
+      tabName: "Bilan Charges & Produits",
+      sectionDesc:
+        "Compte de résultat synthétique à deux colonnes mettant en regard les Charges (dépenses) et les Produits (financements), prêt pour communication externe.",
+      sheetBanner: (seasonName: string, startDate: string, deadlineDate: string) =>
+        `Budget INSA ROUEN RACING — ${seasonName} (${startDate} au ${deadlineDate})`,
+      chargesHeader: "Charges",
+      produitsHeader: "Produits",
+      totalLabel: "Total :",
+      csvHeaders: [
+        "Catégorie Charges",
+        "Poste de dépense",
+        "Charges (EUR)",
+        "Catégorie Produits",
+        "Source de financement",
+        "Produits (EUR)"
+      ],
+      groups: {
+        administratives: "Administratives",
+        financieres: "Financières",
+        techniques: "Techniques",
+        aides: "Aides obtenues",
+        concours: "Concours",
+        sponsoring: "Mécénat / Sponsoring",
+        propre: "Rentrée d'argent propre"
+      },
+      chargeLines: {
+        local: "Local",
+        secretariat: "Secrétariat",
+        communication: "Communication",
+        dettes: "Dettes",
+        powertrain: "Powertrain",
+        structure: "Structure",
+        suspensions: "Suspensions",
+        mecatronique: "Mécatronique",
+        carrosserie: "Carrosserie",
+        outillage: "Outillage"
+      },
+      emptyGroupItem: "Aucun élément enregistré",
+      reconciliationTitle: "Rapprochement comptable & Notes pour lecteur externe",
+      realizedOnlyLabel: "Réalisé uniquement (Entrées encaissées - Dépenses facturées)",
+      withProvisionalLabel: "Budget global engagé (Confirmé + Prévisionnel - Facturé + Commandé)",
+      openingCarryOverLabel: "Solde initial de report (exercice précédent)",
+      netPeriodResultLabel: "Résultat net de la période (Produits - Charges)",
+      endingActualCashLabel: "Trésorerie réelle restante (Report initial + Résultat réalisé)",
+      endingProjectedCashLabel: "Solde prévisionnel final (Report initial + Résultat global engagé)",
+      mappingNote:
+        "Note : les lignes surlignées sous Mécénat / Sponsoring correspondent aux soutiens privés, partenaires et levée de fonds. Le poste Structure regroupe Châssis et Ergonomie/Poste de pilotage."
+    },
     summary: {
       title: "Tableau de bord & Synthèse",
-      headers: ["Indicateur", "Valeur (EUR)", "Nombre / Notes"],
-      rowSeasonName: "Nom de la saison",
+      sectionDesc:
+        "Vue d'ensemble claire des liquidités disponibles en banque, du solde prévisionnel, des financements reçus ou attendus et des dépenses justifiées.",
+      headers: ["Indicateur financier", "Montant / Valeur (EUR)", "Nombre & explication simple"],
+      rowSeasonName: "Période / Saison analysée",
       rowOpeningBalance: "Solde de report initial",
-      rowConfirmedEntries: "Entrées d'argent confirmées",
-      rowConfirmedCount: (n: number) => `${n} confirmée(s)`,
-      rowProvisionalEntries: "Entrées d'argent prévisionnelles",
-      rowProvisionalCount: (n: number) => `${n} prévisionnelle(s)`,
-      rowFinalSpendings: "Dépenses finales (Facturées)",
-      rowInvoicedCount: (n: number) => `${n} facturée(s)`,
-      rowProvisionalSpendings: "Dépenses prévisionnelles (Commandes)",
-      rowActiveOrdersCount: (n: number) => `${n} commande(s) active(s)`,
-      rowActualCashLeft: "Trésorerie réelle restante",
-      rowActualCashNote: "Initial + Entrées confirmées - Dépenses finales",
-      rowProjectedBalance: "Solde prévisionnel",
-      rowProjectedNote: "Inclut les entrées et commandes prévisionnelles",
-      rowOpenRequests: "Demandes ouvertes (Examen / Contre / Étape 2)",
-      rowPendingCount: (n: number) => `${n} en attente`
+      rowOpeningNote: "Fonds disponibles reportés en début de période",
+      rowConfirmedEntries: "Recettes encaissées (Confirmées)",
+      rowConfirmedCount: (n: number) => `${n} versement(s) confirmé(s) sur le compte de l'association`,
+      rowProvisionalEntries: "Financements annoncés (Prévisionnels)",
+      rowProvisionalCount: (n: number) => `${n} subvention(s) ou sponsoring promis non encore encaissé(s)`,
+      rowFinalSpendings: "Dépenses payées et facturées",
+      rowInvoicedCount: (n: number) => `${n} achat(s) finalisé(s) avec facture justificative`,
+      rowProvisionalSpendings: "Commandes en cours (En attente de facture)",
+      rowActiveOrdersCount: (n: number) =>
+        `${n} commande(s) validée(s) auprès de fournisseurs, facture finale attendue`,
+      rowActualCashLeft: "Trésorerie réelle disponible",
+      rowActualCashNote: "Report initial + Recettes encaissées - Dépenses facturées",
+      rowProjectedBalance: "Solde prévisionnel en fin d'exercice",
+      rowProjectedNote:
+        "Solde estimé après encaissement des aides attendues et paiement des commandes en cours",
+      rowNetPeriodResult: "Résultat net de l'exercice (Confirmé + Prévisionnel)",
+      rowNetPeriodResultNote: "Total Produits (confirmés + attendus) moins Total Charges (facturées + commandées)",
+      rowOpenRequests: "Demandes d'achat internes à l'étude (Non commandées)",
+      rowPendingCount: (n: number) => `${n} demande(s) en cours d'arbitrage interne — non déduites`,
+      glossaryTitle: "Comment lire ce rapport budgétaire (Lecteur externe)",
+      glossaryRows: [
+        [
+          "Trésorerie réelle vs Prévisionnel",
+          "La trésorerie réelle ne prend en compte que les fonds déjà reçus et les factures payées. Le prévisionnel inclut en plus les subventions/sponsors promis et les commandes fournisseurs déjà engagées."
+        ],
+        [
+          "Montants en EUR TTC",
+          "En tant qu'association étudiante non assujettie à la TVA, INSA Rouen Racing règle et déclare l'ensemble de ses coûts toutes taxes comprises (frais de port et douane inclus)."
+        ],
+        [
+          "Pôles techniques",
+          "Les dépenses techniques correspondent aux grands sous-ensembles de la monoplace électrique Formula Student (Powertrain, Structure/Châssis, Suspensions, Mécatronique, Carrosserie/Aéro, Outillage)."
+        ]
+      ]
     },
     byDepartment: {
       title: "Dépenses par pôle",
+      tabName: "Dépenses par pôle",
+      sectionDesc:
+        "Répartition des achats par pôle technique et logistique de la monoplace, comparant facturé, commandes en cours et budget alloué.",
       headers: [
         "Code",
         "Pôle",
@@ -972,6 +1084,9 @@ export const fr: TranslationDict = {
     },
     byTimeframe: {
       title: (periodLabel: string) => `Dépenses par période (${periodLabel})`,
+      tabName: "Par période",
+      sectionDesc:
+        "Historique chronologique des encaissements et décaissements par période pour suivre le rythme des subventions et des achats.",
       headers: [
         "Période",
         "Dépenses finales (EUR)",
@@ -983,6 +1098,9 @@ export const fr: TranslationDict = {
     },
     allSpendings: {
       title: "Toutes les dépenses (Facturé)",
+      tabName: "Dépenses facturées",
+      sectionDesc:
+        "Grand livre détaillé de chaque dépense finalisée avec facture fournisseur, distinguant prix pièce, livraison et frais d'importation.",
       headers: [
         "ID demande",
         "Pôle",
@@ -1001,6 +1119,9 @@ export const fr: TranslationDict = {
     },
     provisionalSpendings: {
       title: "Dépenses prévis. (Commandes)",
+      tabName: "Commandes en cours",
+      sectionDesc:
+        "Commandes fournisseurs déjà passées ou en cours de livraison dont la facture définitive n'a pas encore été importée.",
       headers: [
         "ID demande",
         "Pôle",
@@ -1018,6 +1139,9 @@ export const fr: TranslationDict = {
     },
     provisionalEntries: {
       title: "Entrées prévisionnelles",
+      tabName: "Aides attendues",
+      sectionDesc:
+        "Subventions, bourses et soutiens financiers annoncés ou engagés mais pas encore crédités sur le compte bancaire.",
       headers: [
         "ID entrée",
         "Catégorie",
@@ -1030,6 +1154,9 @@ export const fr: TranslationDict = {
     },
     allEntries: {
       title: "Toutes les entrées d'argent",
+      tabName: "Toutes les entrées",
+      sectionDesc:
+        "Registre complet de toutes les recettes de l'association (aides étudiantes, sponsoring, concours, cotisations), distinguant encaissé et attendu.",
       headers: [
         "ID entrée",
         "Statut",
@@ -1046,6 +1173,9 @@ export const fr: TranslationDict = {
     },
     entriesByCategory: {
       title: "Entrées par catégorie",
+      tabName: "Entrées par catégorie",
+      sectionDesc:
+        "Synthèse des financements regroupés par type d'apport (Sponsoring, FSDIE, INSA, Donateurs, Partenariats).",
       headers: [
         "Catégorie",
         "Entrées confirmées (EUR)",
@@ -1058,6 +1188,9 @@ export const fr: TranslationDict = {
     },
     cashflowRates: {
       title: (periodLabel: string) => `Trésorerie & Flux (${periodLabel})`,
+      tabName: "Trésorerie & Soldes",
+      sectionDesc:
+        "Évolution période par période du solde cumulé en banque pour vérifier l'équilibre entre flux entrants et sortants.",
       headers: [
         "Période",
         "Entrées confirmées (EUR)",
@@ -1066,8 +1199,9 @@ export const fr: TranslationDict = {
         "Solde réel cumulé (EUR)",
         "Solde prévis. cumulé (EUR)"
       ],
-      summaryRowLabel: (count: number, unitNoun: string) => `SYNTHÈSE (${count} ${unitNoun}(s))`,
-      perPeriodSuffix: "/p"
+      summaryRowLabel: (count: number, unitNoun: string) =>
+        `MOYENNE PÉRIODE (${count} ${unitNoun === "mois" ? "mois" : count === 1 ? unitNoun : `${unitNoun}s`})`,
+      perPeriodSuffix: (unitNoun: string) => ` / ${unitNoun}`
     }
   },
   serverErrors: {

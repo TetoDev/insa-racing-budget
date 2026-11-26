@@ -51,6 +51,7 @@ import {
   getDatePresetRange,
   type DatePresetId
 } from "~/lib/budget-analytics";
+import { buildFinancialStatement } from "~/lib/financial-statement";
 import {
   BUDGET_SECTIONS,
   DEPARTMENTS,
@@ -273,7 +274,7 @@ export default function BudgetPage() {
     group: "Overview" | "Spendings" | "Entries" | "Cashflow";
     ids: BudgetSectionId[];
   }> = [
-    { group: "Overview", ids: ["summary"] },
+    { group: "Overview", ids: ["summary", "financial_statement"] },
     {
       group: "Spendings",
       ids: ["by_department", "by_timeframe", "all_spendings", "provisional_spendings"]
@@ -281,6 +282,8 @@ export default function BudgetPage() {
     { group: "Entries", ids: ["provisional_entries", "all_entries", "entries_by_category"] },
     { group: "Cashflow", ids: ["cashflow_rates"] }
   ];
+
+  const [stmtConfirmedOnly, setStmtConfirmedOnly] = createSignal(false);
 
   const sectionNum = new Map<BudgetSectionId, number>(
     BUDGET_SECTIONS.map((s, idx) => [s.id, idx + 1])
@@ -667,6 +670,204 @@ export default function BudgetPage() {
                   />
                 </div>
               </div>
+            </Match>
+
+            {/* 1b. Charges & Income Statement (External Accounting Bilan) */}
+            <Match when={activeTab() === "financial_statement"}>
+              {(() => {
+                const stmt = createMemo(() =>
+                  buildFinancialStatement({
+                    seasonName: data().season.name,
+                    startDate: data().season.startDate,
+                    deadlineDate: data().season.deadlineDate,
+                    openingBalanceCents: data().analytics.openingBalanceCents,
+                    spendings: data().spendings,
+                    provisionalSpendings: data().provisionalSpendings,
+                    entries: data().entries,
+                    locale: locale(),
+                    confirmedOnly: stmtConfirmedOnly()
+                  })
+                );
+                const statementExportHref = () => {
+                  const params = new URLSearchParams();
+                  if (app.selectedSeasonId()) params.set("season", app.selectedSeasonId());
+                  params.set("period", periodUnit());
+                  if (fromDate()) params.set("from", fromDate());
+                  if (toDate()) params.set("to", toDate());
+                  params.set("sections", "summary,financial_statement,by_department,entries_by_category");
+                  return `/exports?${params.toString()}`;
+                };
+
+                return (
+                  <div class="space-y-4">
+                    <div class="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 shadow-xs space-y-4">
+                      <div class="flex flex-col md:flex-row md:items-center justify-between gap-3">
+                        <div>
+                          <h2 class="text-base font-bold text-slate-900 dark:text-slate-100">
+                            {t().budget.financialStatement.title}
+                          </h2>
+                          <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                            {t().budget.financialStatement.subtitle}
+                          </p>
+                        </div>
+                        <div class="flex flex-wrap items-center gap-2">
+                          <div class="inline-flex rounded-lg border border-slate-200 dark:border-slate-700 p-0.5 bg-slate-50 dark:bg-slate-950 text-xs">
+                            <button
+                              type="button"
+                              onClick={() => setStmtConfirmedOnly(false)}
+                              class={`rounded-md px-2.5 py-1 font-semibold cursor-pointer ${
+                                !stmtConfirmedOnly()
+                                  ? "bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-950"
+                                  : "text-slate-600 dark:text-slate-400"
+                              }`}
+                            >
+                              {t().budget.financialStatement.includeProvisionalLabel}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setStmtConfirmedOnly(true)}
+                              class={`rounded-md px-2.5 py-1 font-semibold cursor-pointer ${
+                                stmtConfirmedOnly()
+                                  ? "bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-950"
+                                  : "text-slate-600 dark:text-slate-400"
+                              }`}
+                            >
+                              {t().budget.financialStatement.confirmedOnlyLabel}
+                            </button>
+                          </div>
+                          <Show when={canExportBudget(app.user()?.role)}>
+                            <A
+                              href={statementExportHref()}
+                              class="inline-flex items-center gap-1.5 rounded-lg bg-red-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-red-700"
+                            >
+                              <Download class="h-3.5 w-3.5" />
+                              {t().budget.financialStatement.exportThisBtn}
+                            </A>
+                          </Show>
+                        </div>
+                      </div>
+
+                      <div class="overflow-x-auto rounded-lg border border-slate-900 dark:border-slate-600">
+                        <table class="w-full border-collapse text-xs text-slate-950 dark:text-slate-100">
+                          <thead>
+                            <tr>
+                              <th
+                                colspan={6}
+                                class="border-b border-slate-900 dark:border-slate-600 bg-[#2DB5C0] dark:bg-teal-800 px-3 py-2 text-center text-sm font-bold text-slate-950 dark:text-white"
+                              >
+                                {stmt().bannerTitle}
+                              </th>
+                            </tr>
+                            <tr class="bg-slate-200 dark:bg-slate-800 font-bold">
+                              <th
+                                colspan={3}
+                                class="border-b border-r-2 border-slate-900 dark:border-slate-600 px-3 py-1.5 text-left"
+                              >
+                                {stmt().chargesHeader}
+                              </th>
+                              <th
+                                colspan={3}
+                                class="border-b border-slate-900 dark:border-slate-600 px-3 py-1.5 text-left"
+                              >
+                                {stmt().produitsHeader}
+                              </th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            <For each={stmt().pairedRows}>
+                              {pair => (
+                                <tr>
+                                  <Show when={pair.leftGroupSpan > 0 && pair.left}>
+                                    <td
+                                      rowspan={pair.leftGroupSpan}
+                                      class="border border-slate-900 dark:border-slate-700 bg-white dark:bg-slate-900 px-2.5 py-1.5 text-center font-medium align-middle w-[14%]"
+                                    >
+                                      {pair.left?.groupLabel}
+                                    </td>
+                                  </Show>
+                                  <td class="border border-slate-900 dark:border-slate-700 bg-white dark:bg-slate-900 px-2.5 py-1.5 w-[22%]">
+                                    {pair.left?.label ?? ""}
+                                  </td>
+                                  <td class="border border-r-2 border-slate-900 dark:border-slate-700 bg-white dark:bg-slate-900 px-2.5 py-1.5 text-right tabular-nums w-[14%]">
+                                    {pair.left && !pair.left.isBlankPadding
+                                      ? formatEur(pair.left.totalCents, locale())
+                                      : ""}
+                                  </td>
+
+                                  <Show when={pair.rightGroupSpan > 0 && pair.right}>
+                                    <td
+                                      rowspan={pair.rightGroupSpan}
+                                      class="border border-slate-900 dark:border-slate-700 bg-white dark:bg-slate-900 px-2.5 py-1.5 text-center font-medium align-middle w-[16%]"
+                                    >
+                                      {pair.right?.groupLabel}
+                                    </td>
+                                  </Show>
+                                  <td
+                                    class={`border border-slate-900 dark:border-slate-700 px-2.5 py-1.5 w-[22%] ${
+                                      pair.right?.highlight && !pair.right.isBlankPadding
+                                        ? "bg-[#FFF2CC] dark:bg-amber-950/45"
+                                        : "bg-white dark:bg-slate-900"
+                                    }`}
+                                  >
+                                    {pair.right?.label ?? ""}
+                                  </td>
+                                  <td class="border border-slate-900 dark:border-slate-700 bg-white dark:bg-slate-900 px-2.5 py-1.5 text-right tabular-nums w-[12%]">
+                                    {pair.right && !pair.right.isBlankPadding
+                                      ? formatEur(pair.right.totalCents, locale())
+                                      : ""}
+                                  </td>
+                                </tr>
+                              )}
+                            </For>
+                            <tr class="bg-slate-50 dark:bg-slate-800/80 font-bold">
+                              <td
+                                colspan={2}
+                                class="border-t-2 border-slate-900 dark:border-slate-600 px-2.5 py-2 text-right"
+                              >
+                                {stmt().totalLabel}
+                              </td>
+                              <td class="border-t-2 border-l border-r-2 border-slate-900 dark:border-slate-600 px-2.5 py-2 text-right tabular-nums">
+                                {formatEur(stmt().totalChargesCents, locale())}
+                              </td>
+                              <td
+                                colspan={2}
+                                class="border-t-2 border-slate-900 dark:border-slate-600 px-2.5 py-2 text-right"
+                              >
+                                {stmt().totalLabel}
+                              </td>
+                              <td class="border-t-2 border-l border-slate-900 dark:border-slate-600 px-2.5 py-2 text-right tabular-nums">
+                                {formatEur(stmt().totalProduitsCents, locale())}
+                              </td>
+                            </tr>
+                          </tbody>
+                        </table>
+                      </div>
+
+                      <div class="rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950/60 p-3.5 text-xs text-slate-600 dark:text-slate-300 space-y-1">
+                        <div class="font-semibold text-slate-900 dark:text-slate-100">
+                          {t().budget.financialStatement.reconciliationPrefix}{" "}
+                          <span class="tabular-nums">
+                            {formatEur(
+                              stmt().totalProduitsCents - stmt().totalChargesCents,
+                              locale()
+                            )}
+                          </span>
+                        </div>
+                        <div>
+                          {t().budget.financialStatement.cashReconciliation(
+                            formatEur(stmt().openingBalanceCents, locale()),
+                            formatEur(stmt().actualCashBalanceCents, locale()),
+                            formatEur(stmt().projectedCashBalanceCents, locale())
+                          )}
+                        </div>
+                        <div class="text-[11px] text-slate-500 dark:text-slate-400">
+                          {t().budget.financialStatement.mappingNote}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
             </Match>
 
             {/* 2. Dashboard and spendings by department */}
