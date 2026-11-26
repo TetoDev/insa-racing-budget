@@ -207,6 +207,11 @@ export default function RequestsListPage() {
                               {req.carSystem}
                             </span>
                           </Show>
+                          <Show when={req.quantity > 1}>
+                            <span class="rounded-md bg-amber-50 dark:bg-amber-950/60 border border-amber-200 dark:border-amber-800/70 px-2 py-0.5 text-[11px] font-semibold tabular-nums text-amber-800 dark:text-amber-300">
+                              {t().requests.quantityBadge(req.quantity)}
+                            </span>
+                          </Show>
                         </div>
 
                         <h2 class="text-base font-bold text-slate-900 dark:text-slate-100 group-hover:text-red-600 dark:group-hover:text-red-400 transition-colors truncate">

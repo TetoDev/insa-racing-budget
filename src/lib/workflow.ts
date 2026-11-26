@@ -87,6 +87,39 @@ export function isRequestTerminal(status: RequestStatus): boolean {
   );
 }
 
+export const MAX_REQUEST_QUANTITY = 100_000;
+export const MAX_MONEY_CENTS = 2_000_000_000;
+
+/** Parses a positive whole-number quantity string or number; returns null if invalid. */
+export function parseRequestQuantity(raw: string | number): number | null {
+  if (typeof raw === "number") {
+    if (!Number.isInteger(raw) || raw < 1 || raw > MAX_REQUEST_QUANTITY) return null;
+    return raw;
+  }
+  const trimmed = raw.trim();
+  if (!/^\d+$/.test(trimmed)) return null;
+  const parsed = Number(trimmed);
+  if (!Number.isSafeInteger(parsed) || parsed < 1 || parsed > MAX_REQUEST_QUANTITY) return null;
+  return parsed;
+}
+
+/** Multiplies unit price in integer Euro cents by quantity, guarding Postgres integer bounds. */
+export function computeOptionTotalCents(unitPriceCents: number, quantity: number): number | null {
+  if (
+    !Number.isFinite(unitPriceCents) ||
+    !Number.isInteger(quantity) ||
+    quantity < 1 ||
+    quantity > MAX_REQUEST_QUANTITY
+  ) {
+    return null;
+  }
+  const total = Math.round(unitPriceCents) * quantity;
+  if (!Number.isSafeInteger(total) || total < 0 || total > MAX_MONEY_CENTS) {
+    return null;
+  }
+  return total;
+}
+
 export function computeOrderTotalCents(req: {
   selectedOptionPriceCents: number | null;
   shippingCents: number;

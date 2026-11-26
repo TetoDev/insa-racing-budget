@@ -29,6 +29,7 @@ export async function POST(event: APIEvent) {
     await editUnreviewedPurchaseRequest(user, {
       requestId,
       title: parsed.data.title,
+      quantity: parsed.data.quantity,
       carSystem: parsed.data.carSystem,
       explanation: parsed.data.explanation,
       options: parsed.data.options,

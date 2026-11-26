@@ -6,15 +6,16 @@ import { createStore, produce, unwrap } from "solid-js/store";
 import { useApp, useI18n } from "~/components/AppContext";
 import { CarSystemField } from "~/components/CarSystemField";
 import { DEPARTMENTS, type DepartmentId } from "~/lib/constants";
-import { formatBytes } from "~/lib/format";
+import { formatBytes, formatEur, parseEurToCents } from "~/lib/format";
 import { getDepartmentLabel } from "~/lib/i18n";
 import { syncControlValue } from "~/lib/input-sync";
 import { canCreateRequest } from "~/lib/permissions";
+import { computeOptionTotalCents, parseRequestQuantity } from "~/lib/workflow";
 
 interface DraftOption {
   label: string;
   productUrl: string;
-  priceEur: string;
+  unitPriceEur: string;
   drawbacks: string;
   notes: string;
 }
@@ -25,19 +26,31 @@ export default function NewRequestPage() {
   const navigate = useNavigate();
 
   const [title, setTitle] = createSignal("");
+  const [quantityStr, setQuantityStr] = createSignal("1");
   const [department, setDepartment] = createSignal<DepartmentId>("aero");
   const [carSystem, setCarSystem] = createSignal("");
   const [explanation, setExplanation] = createSignal("");
   const [options, setOptions] = createStore<DraftOption[]>([
-    { label: "", productUrl: "", priceEur: "", drawbacks: "", notes: "" }
+    { label: "", productUrl: "", unitPriceEur: "", drawbacks: "", notes: "" }
   ]);
   const [photos, setPhotos] = createSignal<File[]>([]);
   const [documents, setDocuments] = createSignal<File[]>([]);
   const [submitting, setSubmitting] = createSignal(false);
   const [error, setError] = createSignal("");
 
+  const parsedQuantity = () => parseRequestQuantity(quantityStr());
+
+  const computeLiveOptionSummary = (rawUnitEur: string) => {
+    const qty = parsedQuantity();
+    const unitCents = parseEurToCents(rawUnitEur, { allowZero: false });
+    if (qty === null || unitCents === null) return null;
+    const totalCents = computeOptionTotalCents(unitCents, qty);
+    if (totalCents === null) return null;
+    return { qty, unitCents, totalCents };
+  };
+
   const addOption = () => {
-    setOptions(options.length, { label: "", productUrl: "", priceEur: "", drawbacks: "", notes: "" });
+    setOptions(options.length, { label: "", productUrl: "", unitPriceEur: "", drawbacks: "", notes: "" });
   };
 
   const removeOption = (idx: number) => {
@@ -66,6 +79,11 @@ export default function NewRequestPage() {
   async function handleSubmit(e: SubmitEvent) {
     e.preventDefault();
     setError("");
+    const qty = parsedQuantity();
+    if (qty === null) {
+      setError(t().requests.invalidQuantityPreview);
+      return;
+    }
     setSubmitting(true);
 
     try {
@@ -74,6 +92,7 @@ export default function NewRequestPage() {
         "payload",
         JSON.stringify({
           title: title(),
+          quantity: qty,
           department: department(),
           carSystem: carSystem(),
           explanation: explanation(),
@@ -142,7 +161,7 @@ export default function NewRequestPage() {
           <div class="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 shadow-xs space-y-4">
             <h2 class="text-base font-bold text-slate-900 dark:text-slate-100">{t().requests.section1Title}</h2>
 
-            <div class="grid sm:grid-cols-3 gap-4">
+            <div class="grid sm:grid-cols-4 gap-4">
               <div class="sm:col-span-2">
                 <label class="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">
                   {t().requests.productTitleLabel}
@@ -155,6 +174,23 @@ export default function NewRequestPage() {
                   onInput={e => setTitle(e.currentTarget.value)}
                   placeholder={t().requests.productTitlePlaceholder}
                   class="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 px-3.5 py-2 text-sm text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:border-red-500 focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label class="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">
+                  {t().requests.quantityLabel}
+                </label>
+                <input
+                  type="number"
+                  required
+                  min={1}
+                  max={100000}
+                  step={1}
+                  data-testid="request-quantity-input"
+                  value={quantityStr()}
+                  onInput={e => setQuantityStr(e.currentTarget.value)}
+                  class="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 px-3.5 py-2 text-sm text-slate-900 dark:text-slate-100 tabular-nums focus:border-red-500 focus:outline-none"
                 />
               </div>
 
@@ -202,11 +238,20 @@ export default function NewRequestPage() {
 
           {/* Buying Options */}
           <div class="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 shadow-xs space-y-4">
-            <div class="flex items-center justify-between">
+            <div class="flex flex-wrap items-center justify-between gap-2">
               <div>
-                <h2 class="text-base font-bold text-slate-900 dark:text-slate-100">{t().requests.section2Title}</h2>
+                <div class="flex flex-wrap items-center gap-2">
+                  <h2 class="text-base font-bold text-slate-900 dark:text-slate-100">{t().requests.section2Title}</h2>
+                  <span class="rounded-md bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 px-2 py-0.5 text-[11px] font-semibold tabular-nums text-slate-700 dark:text-slate-300">
+                    {t().requests.quantityUnitsShort(parsedQuantity() ?? 1)}
+                  </span>
+                </div>
                 <p class="text-xs text-slate-500 dark:text-slate-400">
                   {t().requests.section2Subtitle}
+                  <Show when={parsedQuantity() !== null}>
+                    {" "}
+                    {t().requests.section2QuantityNote(parsedQuantity()!)}
+                  </Show>
                 </p>
               </div>
               <button
@@ -239,7 +284,7 @@ export default function NewRequestPage() {
                       </Show>
                     </div>
 
-                    <div class="grid sm:grid-cols-3 gap-3">
+                    <div class="grid sm:grid-cols-4 gap-3">
                       <div class="sm:col-span-2">
                         <label class="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">
                           {t().requests.optionLabel}
@@ -256,16 +301,48 @@ export default function NewRequestPage() {
 
                       <div>
                         <label class="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">
-                          {t().requests.priceLabel}
+                          {t().requests.unitPriceLabel}
                         </label>
                         <input
-                          ref={syncControlValue(() => opt.priceEur)}
+                          ref={syncControlValue(() => opt.unitPriceEur)}
                           type="text"
                           required
-                          onInput={e => updateOption(idx(), "priceEur", e.currentTarget.value)}
-                          placeholder={t().requests.pricePlaceholder}
+                          data-testid={`option-unit-price-${idx()}`}
+                          onInput={e => updateOption(idx(), "unitPriceEur", e.currentTarget.value)}
+                          placeholder={t().requests.unitPricePlaceholder}
                           class="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 tabular-nums placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:border-red-500 focus:outline-none"
                         />
+                      </div>
+
+                      <div>
+                        <div class="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">
+                          {t().requests.totalPriceLabel}
+                        </div>
+                        <div
+                          data-testid={`option-total-preview-${idx()}`}
+                          class="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-100/80 dark:bg-slate-900 px-3 py-2 min-h-[38px] flex flex-col justify-center"
+                        >
+                          <Show
+                            when={computeLiveOptionSummary(opt.unitPriceEur)}
+                            fallback={
+                              <span class="text-xs text-slate-400 dark:text-slate-500">—</span>
+                            }
+                          >
+                            {calc => (
+                              <div class="flex items-baseline justify-between gap-2">
+                                <span class="text-sm font-extrabold tabular-nums text-slate-900 dark:text-slate-100">
+                                  {formatEur(calc().totalCents, locale())}
+                                </span>
+                                <span class="text-[11px] tabular-nums text-slate-500 dark:text-slate-400 truncate">
+                                  {t().requests.totalFromUnitFormula(
+                                    calc().qty,
+                                    formatEur(calc().unitCents, locale())
+                                  )}
+                                </span>
+                              </div>
+                            )}
+                          </Show>
+                        </div>
                       </div>
                     </div>
 

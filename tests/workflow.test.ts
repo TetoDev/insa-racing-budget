@@ -2,8 +2,10 @@ import { describe, expect, it } from "vitest";
 import { createRequestPayloadSchema, editRequestPayloadSchema } from "~/lib/schemas";
 import {
   canTransitionEntry,
+  computeOptionTotalCents,
   computeOrderTotalCents,
   isRequestTerminal,
+  parseRequestQuantity,
   resolveRequestTransition
 } from "~/lib/workflow";
 
@@ -148,16 +150,56 @@ describe("purchase request workflow transitions", () => {
 
     const validEdit = editRequestPayloadSchema.safeParse({
       title: "Inconel Exhaust Collector v2",
+      quantity: 3,
       carSystem: "Powertrain / Engine & Drivetrain",
       explanation: "Updated with second supplier option.",
       options: [
         {
           label: "Custom Fab FR",
-          priceEur: "640.00",
+          unitPriceEur: "640.00",
           drawbacks: "3 week lead time"
         }
       ]
     });
     expect(validEdit.success).toBe(true);
+    if (validEdit.success) {
+      expect(validEdit.data.quantity).toBe(3);
+    }
+  });
+
+  it("parses request quantities and computes total cents from unit prices accurately", () => {
+    expect(parseRequestQuantity(1)).toBe(1);
+    expect(parseRequestQuantity("12")).toBe(12);
+    expect(parseRequestQuantity("  25 ")).toBe(25);
+    expect(parseRequestQuantity(0)).toBeNull();
+    expect(parseRequestQuantity(-2)).toBeNull();
+    expect(parseRequestQuantity("1.5")).toBeNull();
+    expect(parseRequestQuantity("abc")).toBeNull();
+    expect(parseRequestQuantity(100_001)).toBeNull();
+
+    expect(computeOptionTotalCents(1250, 10)).toBe(12_500);
+    expect(computeOptionTotalCents(42050, 3)).toBe(126_150);
+    expect(computeOptionTotalCents(100_000_000, 100)).toBeNull(); // exceeds MAX_MONEY_CENTS
+    expect(computeOptionTotalCents(1250, 0)).toBeNull();
+
+    const invalidQty = createRequestPayloadSchema.safeParse({
+      title: "M6 Titanium Bolts",
+      quantity: 0,
+      department: "chassis",
+      carSystem: "Chassis / Fasteners",
+      explanation: "Need 20 bolts for front wing mounts.",
+      options: [{ label: "ProBolt", unitPriceEur: "2.50", drawbacks: "None" }]
+    });
+    expect(invalidQty.success).toBe(false);
+
+    const fractionalQty = createRequestPayloadSchema.safeParse({
+      title: "M6 Titanium Bolts",
+      quantity: 2.5,
+      department: "chassis",
+      carSystem: "Chassis / Fasteners",
+      explanation: "Need bolts for mounts.",
+      options: [{ label: "ProBolt", unitPriceEur: "2.50", drawbacks: "None" }]
+    });
+    expect(fractionalQty.success).toBe(false);
   });
 });

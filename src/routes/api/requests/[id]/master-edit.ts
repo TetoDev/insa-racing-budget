@@ -33,6 +33,7 @@ export async function POST(event: APIEvent) {
       seasonId: parsed.data.seasonId,
       department: parsed.data.department as DepartmentId,
       carSystem: parsed.data.carSystem,
+      quantity: parsed.data.quantity,
       title: parsed.data.title,
       explanation: parsed.data.explanation,
       status: parsed.data.status as RequestStatus,

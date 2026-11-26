@@ -65,6 +65,7 @@ describe("Master record validation schemas", () => {
       seasonId: sampleUuid,
       department: "aero",
       carSystem: "",
+      quantity: 4,
       title: "Carbon Endplate Sheets",
       explanation: "Imported order",
       status: "spending",
@@ -87,7 +88,7 @@ describe("Master record validation schemas", () => {
           clientKey: sampleUuid,
           label: "Easy Composites",
           productUrl: "https://example.com/item",
-          priceEur: "120.00",
+          unitPriceEur: "30.00",
           drawbacks: "2-week shipping",
           notes: "Preferred"
         }

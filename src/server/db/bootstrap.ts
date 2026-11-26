@@ -89,6 +89,7 @@ async function runBootstrap(): Promise<void> {
         season_id uuid NOT NULL REFERENCES seasons(id),
         department text NOT NULL,
         car_system text NOT NULL DEFAULT '',
+        quantity integer NOT NULL DEFAULT 1,
         title text NOT NULL,
         explanation text NOT NULL,
         status text NOT NULL DEFAULT 'pending_review',
@@ -110,6 +111,7 @@ async function runBootstrap(): Promise<void> {
       );
 
       ALTER TABLE purchase_requests ADD COLUMN IF NOT EXISTS car_system text NOT NULL DEFAULT '';
+      ALTER TABLE purchase_requests ADD COLUMN IF NOT EXISTS quantity integer NOT NULL DEFAULT 1;
       CREATE INDEX IF NOT EXISTS idx_pr_season_status ON purchase_requests(season_id, status);
       CREATE INDEX IF NOT EXISTS idx_pr_season_dept ON purchase_requests(season_id, department);
 
@@ -119,11 +121,17 @@ async function runBootstrap(): Promise<void> {
         sort_order integer NOT NULL DEFAULT 0,
         label text NOT NULL,
         product_url text,
+        unit_price_cents integer NOT NULL DEFAULT 0,
         price_cents integer NOT NULL,
         drawbacks text NOT NULL,
         notes text,
         created_at timestamptz NOT NULL DEFAULT now()
       );
+
+      ALTER TABLE buying_options ADD COLUMN IF NOT EXISTS unit_price_cents integer;
+      UPDATE buying_options SET unit_price_cents = price_cents WHERE unit_price_cents IS NULL;
+      ALTER TABLE buying_options ALTER COLUMN unit_price_cents SET DEFAULT 0;
+      ALTER TABLE buying_options ALTER COLUMN unit_price_cents SET NOT NULL;
 
       CREATE TABLE IF NOT EXISTS money_entries (
         id uuid PRIMARY KEY DEFAULT gen_random_uuid(),

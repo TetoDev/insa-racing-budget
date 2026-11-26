@@ -38,6 +38,7 @@ export async function POST(event: APIEvent) {
 
     const created = await createPurchaseRequest(user, {
       title: parsed.data.title,
+      quantity: parsed.data.quantity,
       department: parsed.data.department,
       carSystem: parsed.data.carSystem,
       explanation: parsed.data.explanation,

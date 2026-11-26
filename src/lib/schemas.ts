@@ -51,18 +51,30 @@ export const createSeasonSchema = z.object({
   openingBalanceEur: z.string().trim().default("0")
 });
 
-export const optionInputSchema = z.object({
-  label: z.string().trim().min(1, "Option title/supplier is required").max(120),
-  productUrl: z
-    .string()
-    .trim()
-    .max(500)
-    .optional()
-    .refine(val => !val || /^https?:\/\//i.test(val), "Product URL must start with http:// or https://"),
-  priceEur: z.string().trim().min(1, "Price in EUR is required"),
-  drawbacks: z.string().trim().min(1, "Drawbacks description is required").max(1500),
-  notes: z.string().trim().max(1000).optional()
-});
+export const requestQuantitySchema = z.coerce
+  .number()
+  .int("Quantity must be a whole number")
+  .min(1, "Quantity must be at least 1")
+  .max(100_000, "Quantity must be at most 100000")
+  .default(1);
+
+export const optionInputSchema = z
+  .object({
+    label: z.string().trim().min(1, "Option title/supplier is required").max(120),
+    productUrl: z
+      .string()
+      .trim()
+      .max(500)
+      .optional()
+      .refine(val => !val || /^https?:\/\//i.test(val), "Product URL must start with http:// or https://"),
+    unitPriceEur: z.string().trim().optional(),
+    priceEur: z.string().trim().optional(),
+    drawbacks: z.string().trim().min(1, "Drawbacks description is required").max(1500),
+    notes: z.string().trim().max(1000).optional()
+  })
+  .refine(val => Boolean(val.unitPriceEur || val.priceEur), {
+    message: "Unit price in EUR is required"
+  });
 
 export const carSystemSchema = z
   .string()
@@ -72,6 +84,7 @@ export const carSystemSchema = z
 
 export const createRequestPayloadSchema = z.object({
   title: z.string().trim().min(3, "Request title is required").max(140),
+  quantity: requestQuantitySchema,
   department: z.enum(departmentIds as [typeof DEPARTMENTS[number]["id"], ...typeof DEPARTMENTS[number]["id"][]]),
   carSystem: carSystemSchema,
   explanation: z.string().trim().min(5, "Explanation is required").max(5000),
@@ -80,6 +93,7 @@ export const createRequestPayloadSchema = z.object({
 
 export const editRequestPayloadSchema = z.object({
   title: z.string().trim().min(3, "Title is required").max(140),
+  quantity: requestQuantitySchema,
   carSystem: carSystemSchema,
   explanation: z.string().trim().min(5, "Explanation is required").max(5000),
   options: z.array(optionInputSchema).min(1, "At least one option is required").max(12),
@@ -130,21 +144,26 @@ export const updateDepartmentBudgetsSchema = z.object({
     .max(DEPARTMENTS.length)
 });
 
-export const masterOptionInputSchema = z.object({
-  id: z.string().uuid().optional().nullable(),
-  clientKey: z.string().trim().min(1),
-  label: z.string().trim().min(1, "Option title/supplier is required").max(160),
-  productUrl: z
-    .string()
-    .trim()
-    .max(500)
-    .optional()
-    .nullable()
-    .refine(val => !val || /^https?:\/\//i.test(val), "Product URL must start with http:// or https://"),
-  priceEur: z.string().trim().min(1, "Option price in EUR is required"),
-  drawbacks: z.string().trim().max(1500).default(""),
-  notes: z.string().trim().max(1000).optional().nullable()
-});
+export const masterOptionInputSchema = z
+  .object({
+    id: z.string().uuid().optional().nullable(),
+    clientKey: z.string().trim().min(1),
+    label: z.string().trim().min(1, "Option title/supplier is required").max(160),
+    productUrl: z
+      .string()
+      .trim()
+      .max(500)
+      .optional()
+      .nullable()
+      .refine(val => !val || /^https?:\/\//i.test(val), "Product URL must start with http:// or https://"),
+    unitPriceEur: z.string().trim().optional(),
+    priceEur: z.string().trim().optional(),
+    drawbacks: z.string().trim().max(1500).default(""),
+    notes: z.string().trim().max(1000).optional().nullable()
+  })
+  .refine(val => Boolean(val.unitPriceEur || val.priceEur), {
+    message: "Option unit price in EUR is required"
+  });
 
 export const masterRequestAttachmentUpdateSchema = z.object({
   id: z.string().uuid(),
@@ -164,6 +183,7 @@ export const masterUpdateRequestSchema = z.object({
     departmentIds as [typeof DEPARTMENTS[number]["id"], ...typeof DEPARTMENTS[number]["id"][]]
   ),
   carSystem: z.string().trim().max(120).default(""),
+  quantity: requestQuantitySchema,
   title: z.string().trim().min(1, "Title is required").max(200),
   explanation: z.string().trim().max(10000).default(""),
   status: z.enum(REQUEST_STATUSES),

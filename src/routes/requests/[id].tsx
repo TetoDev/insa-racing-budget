@@ -42,7 +42,7 @@ import {
   MasterEditRequestModal,
   type MasterDeleteTarget
 } from "~/components/MasterModals";
-import { formatBytes, formatCentsPlain, formatDateTime, formatEur } from "~/lib/format";
+import { formatBytes, formatCentsPlain, formatDateTime, formatEur, parseEurToCents } from "~/lib/format";
 import {
   getAttachmentKindLabel,
   getRequestStatusLabel,
@@ -56,6 +56,7 @@ import {
   canSelectOptionOrManageOrder,
   isMaster
 } from "~/lib/permissions";
+import { computeOptionTotalCents, parseRequestQuantity } from "~/lib/workflow";
 import {
   cancelOrderAction,
   counterResponseAction,
@@ -122,10 +123,11 @@ export default function RequestDetailPage() {
   // Pre-review Edit modal
   const [editOpen, setEditOpen] = createSignal(false);
   const [editTitle, setEditTitle] = createSignal("");
+  const [editQuantityStr, setEditQuantityStr] = createSignal("1");
   const [editCarSystem, setEditCarSystem] = createSignal("");
   const [editExplanation, setEditExplanation] = createSignal("");
   const [editOptions, setEditOptions] = createStore<
-    Array<{ label: string; productUrl: string; priceEur: string; drawbacks: string; notes: string }>
+    Array<{ label: string; productUrl: string; unitPriceEur: string; drawbacks: string; notes: string }>
   >([]);
   const [editRemoveIds, setEditRemoveIds] = createSignal<string[]>([]);
   const [editNewPhotos, setEditNewPhotos] = createSignal<File[]>([]);
@@ -152,6 +154,7 @@ export default function RequestDetailPage() {
     const d = detail();
     if (!d) return;
     setEditTitle(d.title);
+    setEditQuantityStr(String(d.quantity));
     setEditCarSystem(d.carSystem);
     setEditExplanation(d.explanation);
     setEditOptions(
@@ -159,7 +162,7 @@ export default function RequestDetailPage() {
         d.options.map(o => ({
           label: o.label,
           productUrl: o.productUrl ?? "",
-          priceEur: formatCentsPlain(o.priceCents),
+          unitPriceEur: formatCentsPlain(o.unitPriceCents),
           drawbacks: o.drawbacks,
           notes: o.notes ?? ""
         }))
@@ -170,6 +173,15 @@ export default function RequestDetailPage() {
     setEditNewDocs([]);
     setEditErr("");
     setEditOpen(true);
+  };
+
+  const computeEditOptionSummary = (rawUnitEur: string) => {
+    const qty = parseRequestQuantity(editQuantityStr());
+    const unitCents = parseEurToCents(rawUnitEur, { allowZero: false });
+    if (qty === null || unitCents === null) return null;
+    const totalCents = computeOptionTotalCents(unitCents, qty);
+    if (totalCents === null) return null;
+    return { qty, unitCents, totalCents };
   };
 
   const refreshAll = async () => {
@@ -244,6 +256,11 @@ export default function RequestDetailPage() {
     e.preventDefault();
     const d = detail();
     if (!d) return;
+    const qty = parseRequestQuantity(editQuantityStr());
+    if (qty === null) {
+      setEditErr(t().requests.invalidQuantityPreview);
+      return;
+    }
     setEditBusy(true);
     setEditErr("");
     try {
@@ -252,6 +269,7 @@ export default function RequestDetailPage() {
         "payload",
         JSON.stringify({
           title: editTitle(),
+          quantity: qty,
           carSystem: editCarSystem(),
           explanation: editExplanation(),
           options: unwrap(editOptions),
@@ -429,12 +447,21 @@ export default function RequestDetailPage() {
 
                     <h1 class="text-2xl font-extrabold text-slate-900 dark:text-slate-100">{d().title}</h1>
 
-                    <Show when={d().carSystem}>
-                      <div class="inline-flex items-center gap-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 px-2.5 py-1 text-xs font-semibold text-slate-700 dark:text-slate-200">
-                        <span class="text-slate-400 dark:text-slate-500 font-medium">{t().requestDetail.carSystemPrefix}</span>
-                        <span>{d().carSystem}</span>
+                    <div class="flex flex-wrap items-center gap-2">
+                      <Show when={d().carSystem}>
+                        <div class="inline-flex items-center gap-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 px-2.5 py-1 text-xs font-semibold text-slate-700 dark:text-slate-200">
+                          <span class="text-slate-400 dark:text-slate-500 font-medium">{t().requestDetail.carSystemPrefix}</span>
+                          <span>{d().carSystem}</span>
+                        </div>
+                      </Show>
+                      <div
+                        data-testid="request-detail-quantity"
+                        class="inline-flex items-center gap-1.5 rounded-lg bg-amber-50 dark:bg-amber-950/60 border border-amber-200 dark:border-amber-800/70 px-2.5 py-1 text-xs font-semibold tabular-nums text-amber-900 dark:text-amber-200"
+                      >
+                        <span class="text-amber-700 dark:text-amber-400 font-medium">{t().requestDetail.quantityPrefix}</span>
+                        <span>{d().quantity}</span>
                       </div>
-                    </Show>
+                    </div>
 
                     <div class="flex flex-wrap items-center gap-3 text-xs text-slate-500 dark:text-slate-400">
                       <span class="inline-flex items-center gap-2">
@@ -518,6 +545,23 @@ export default function RequestDetailPage() {
                       <div class="text-base font-bold tabular-nums text-slate-900 dark:text-slate-100">
                         {formatEur(d().selectedOptionPriceCents ?? 0, locale())}
                       </div>
+                      <Show when={d().quantity > 1}>
+                        {(() => {
+                          const matched = () => d().options.find(o => o.id === d().selectedOptionId);
+                          return (
+                            <Show when={matched()}>
+                              {opt => (
+                                <div class="text-[11px] tabular-nums text-slate-500 dark:text-slate-400">
+                                  {t().requestDetail.unitPriceBreakdown(
+                                    d().quantity,
+                                    formatEur(opt().unitPriceCents, locale())
+                                  )}
+                                </div>
+                              )}
+                            </Show>
+                          );
+                        })()}
+                      </Show>
                     </div>
                     <div>
                       <div class="text-[11px] font-semibold uppercase text-slate-500 dark:text-slate-400">
@@ -683,9 +727,19 @@ export default function RequestDetailPage() {
                                 <h3 class="text-sm font-bold text-slate-900 dark:text-slate-100">{opt.label}</h3>
                               </div>
                             </div>
-                            <span class="text-lg font-extrabold tabular-nums text-slate-900 dark:text-slate-100 shrink-0">
-                              {formatEur(opt.priceCents, locale())}
-                            </span>
+                            <div class="text-right shrink-0">
+                              <span class="text-lg font-extrabold tabular-nums text-slate-900 dark:text-slate-100 block">
+                                {formatEur(opt.priceCents, locale())}
+                              </span>
+                              <Show when={d().quantity > 1}>
+                                <span class="text-[11px] tabular-nums text-slate-500 dark:text-slate-400">
+                                  {t().requestDetail.unitPriceBreakdown(
+                                    d().quantity,
+                                    formatEur(opt.unitPriceCents, locale())
+                                  )}
+                                </span>
+                              </Show>
+                            </div>
                           </div>
 
                           <Show when={isSelectedOrderOpt()}>
@@ -1245,17 +1299,35 @@ export default function RequestDetailPage() {
                       </button>
                     </div>
 
-                    <div>
-                      <label class="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1">
-                        {t().common.title}
-                      </label>
-                      <input
-                        type="text"
-                        required
-                        value={editTitle()}
-                        onInput={e => setEditTitle(e.currentTarget.value)}
-                        class="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 focus:border-red-500 focus:outline-none"
-                      />
+                    <div class="grid sm:grid-cols-3 gap-3">
+                      <div class="sm:col-span-2">
+                        <label class="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1">
+                          {t().common.title}
+                        </label>
+                        <input
+                          type="text"
+                          required
+                          value={editTitle()}
+                          onInput={e => setEditTitle(e.currentTarget.value)}
+                          class="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 focus:border-red-500 focus:outline-none"
+                        />
+                      </div>
+                      <div>
+                        <label class="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1">
+                          {t().requestDetail.editModalQuantity}
+                        </label>
+                        <input
+                          type="number"
+                          required
+                          min={1}
+                          max={100000}
+                          step={1}
+                          data-testid="edit-request-quantity-input"
+                          value={editQuantityStr()}
+                          onInput={e => setEditQuantityStr(e.currentTarget.value)}
+                          class="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 tabular-nums focus:border-red-500 focus:outline-none"
+                        />
+                      </div>
                     </div>
 
                     <CarSystemField
@@ -1289,7 +1361,7 @@ export default function RequestDetailPage() {
                             setEditOptions(editOptions.length, {
                               label: "",
                               productUrl: "",
-                              priceEur: "",
+                              unitPriceEur: "",
                               drawbacks: "",
                               notes: ""
                             })
@@ -1320,23 +1392,35 @@ export default function RequestDetailPage() {
                                 </button>
                               </Show>
                             </div>
-                            <div class="grid grid-cols-3 gap-2">
+                            <div class="grid sm:grid-cols-4 gap-2">
                               <input
                                 ref={syncControlValue(() => opt.label)}
                                 type="text"
                                 required
                                 placeholder={t().requestDetail.editModalSupplierPlaceholder}
                                 onInput={e => setEditOptions(i(), "label", e.currentTarget.value)}
-                                class="col-span-2 rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 px-2.5 py-1.5 text-xs text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500"
+                                class="sm:col-span-2 rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 px-2.5 py-1.5 text-xs text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500"
                               />
                               <input
-                                ref={syncControlValue(() => opt.priceEur)}
+                                ref={syncControlValue(() => opt.unitPriceEur)}
                                 type="text"
                                 required
-                                placeholder={t().requestDetail.editModalPricePlaceholder}
-                                onInput={e => setEditOptions(i(), "priceEur", e.currentTarget.value)}
+                                data-testid={`edit-option-unit-price-${i()}`}
+                                placeholder={t().requestDetail.editModalUnitPricePlaceholder}
+                                onInput={e => setEditOptions(i(), "unitPriceEur", e.currentTarget.value)}
                                 class="rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 px-2.5 py-1.5 text-xs text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 tabular-nums"
                               />
+                              <div class="rounded border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-900 px-2.5 py-1.5 text-xs font-bold tabular-nums text-slate-800 dark:text-slate-200 flex items-center justify-between">
+                                <span class="text-[10px] font-medium text-slate-500 dark:text-slate-400 mr-1">
+                                  {t().requestDetail.editModalTotalPrefix}
+                                </span>
+                                <span>
+                                  {(() => {
+                                    const calc = computeEditOptionSummary(opt.unitPriceEur);
+                                    return calc ? formatEur(calc.totalCents, locale()) : "—";
+                                  })()}
+                                </span>
+                              </div>
                             </div>
                             <input
                               ref={syncControlValue(() => opt.drawbacks)}

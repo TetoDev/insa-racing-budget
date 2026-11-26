@@ -16,7 +16,12 @@ import {
   canEditOrWithdrawUnreviewedRequest,
   canRespondToCounterProposition
 } from "~/lib/permissions";
-import { computeOrderTotalCents, resolveRequestTransition } from "~/lib/workflow";
+import {
+  computeOptionTotalCents,
+  computeOrderTotalCents,
+  parseRequestQuantity,
+  resolveRequestTransition
+} from "~/lib/workflow";
 import { purgeEntityAttachments, saveUploadGroups, syncEntityAttachments } from "./attachment-sync";
 import { recordAuditLog } from "./audit";
 import type { PublicUser } from "./auth";
@@ -38,10 +43,54 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 
 export interface RequestOptionInput {
   label: string;
-  productUrl?: string;
-  priceEur: string;
+  productUrl?: string | null;
+  unitPriceEur?: string;
+  priceEur?: string;
   drawbacks: string;
-  notes?: string;
+  notes?: string | null;
+}
+
+function parseBuyingOptionsForQuantity<T extends RequestOptionInput>(
+  options: T[],
+  rawQuantity: number,
+  opts: { allowZero: boolean }
+): Array<{
+  sortOrder: number;
+  label: string;
+  productUrl: string | null;
+  unitPriceCents: number;
+  priceCents: number;
+  drawbacks: string;
+  notes: string | null;
+  source: T;
+}> {
+  const quantity = parseRequestQuantity(rawQuantity);
+  if (quantity === null) {
+    throw new Error("Quantity must be a whole number between 1 and 100,000.");
+  }
+  return options.map((opt, idx) => {
+    const rawUnit = (opt.unitPriceEur ?? opt.priceEur ?? "").trim();
+    const unitPriceCents = parseEurToCents(rawUnit, { allowZero: opts.allowZero });
+    if (unitPriceCents === null) {
+      throw new Error(`Option #${idx + 1} (${opt.label || "untitled"}) has an invalid unit EUR price.`);
+    }
+    const priceCents = computeOptionTotalCents(unitPriceCents, quantity);
+    if (priceCents === null) {
+      throw new Error(
+        `Option #${idx + 1} (${opt.label || "untitled"}) total price (unit price × quantity) exceeds maximum supported Euro amount.`
+      );
+    }
+    return {
+      sortOrder: idx,
+      label: opt.label.trim(),
+      productUrl: opt.productUrl?.trim() || null,
+      unitPriceCents,
+      priceCents,
+      drawbacks: opt.drawbacks.trim(),
+      notes: opt.notes?.trim() || null,
+      source: opt
+    };
+  });
 }
 
 export async function getActiveSeasonOrThrow() {
@@ -73,6 +122,7 @@ export async function createPurchaseRequest(
   actor: PublicUser,
   params: {
     title: string;
+    quantity?: number;
     department: DepartmentId;
     carSystem: string;
     explanation: string;
@@ -88,20 +138,14 @@ export async function createPurchaseRequest(
     throw new Error("At least one buying option is required.");
   }
 
-  const parsedOptions = params.options.map((opt, idx) => {
-    const priceCents = parseEurToCents(opt.priceEur, { allowZero: false });
-    if (priceCents === null) {
-      throw new Error(`Option #${idx + 1} (${opt.label || "untitled"}) has an invalid EUR price.`);
-    }
-    return {
-      sortOrder: idx,
-      label: opt.label.trim(),
-      productUrl: opt.productUrl?.trim() || null,
-      priceCents,
-      drawbacks: opt.drawbacks.trim(),
-      notes: opt.notes?.trim() || null
-    };
-  });
+  const quantity = parseRequestQuantity(params.quantity ?? 1);
+  if (quantity === null) {
+    throw new Error("Quantity must be a whole number between 1 and 100,000.");
+  }
+
+  const parsedOptions = parseBuyingOptionsForQuantity(params.options, quantity, {
+    allowZero: false
+  }).map(({ source: _source, ...row }) => row);
 
   const savedFiles: Array<{
     kind: "photo" | "document";
@@ -153,6 +197,7 @@ export async function createPurchaseRequest(
           seasonId: activeSeason.id,
           department: params.department,
           carSystem: params.carSystem.trim(),
+          quantity,
           title: params.title.trim(),
           explanation: params.explanation.trim(),
           status: "pending_review",
@@ -188,8 +233,9 @@ export async function createPurchaseRequest(
         eventType: "submitted",
         fromStatus: null,
         toStatus: "pending_review",
-        comment: `Submitted purchase request with ${parsedOptions.length} option(s).`,
+        comment: `Submitted purchase request (qty ${quantity}) with ${parsedOptions.length} option(s).`,
         metadataJson: {
+          quantity,
           optionCount: parsedOptions.length,
           attachmentsCount: savedFiles.length
         }
@@ -203,7 +249,7 @@ export async function createPurchaseRequest(
         targetType: "request",
         targetId: reqRow.id,
         targetCode: reqRow.requestCode,
-        summary: `Created request ${reqRow.requestCode} "${reqRow.title}" (${deptMeta.label} · ${reqRow.carSystem})`
+        summary: `Created request ${reqRow.requestCode} "${reqRow.title}" (qty ${quantity} · ${deptMeta.label} · ${reqRow.carSystem})`
       });
 
       return reqRow;
@@ -316,6 +362,7 @@ export async function listPurchaseRequests(params: {
       seasonId: request.seasonId,
       department: request.department,
       carSystem: request.carSystem,
+      quantity: request.quantity,
       title: request.title,
       explanation: request.explanation,
       status: request.status,
@@ -451,6 +498,7 @@ export async function getPurchaseRequestDetail(idOrCode: string) {
     seasonStatus: season?.status ?? "active",
     department: reqRow.department,
     carSystem: reqRow.carSystem,
+    quantity: reqRow.quantity,
     departmentBudgetContext: {
       allocatedCents: deptAlloc && deptAlloc.allocatedCents > 0 ? deptAlloc.allocatedCents : null,
       spentAndCommittedCents: deptSpentAndCommittedCents
@@ -480,6 +528,7 @@ export async function getPurchaseRequestDetail(idOrCode: string) {
       id: o.id,
       label: o.label,
       productUrl: o.productUrl,
+      unitPriceCents: o.unitPriceCents,
       priceCents: o.priceCents,
       drawbacks: o.drawbacks,
       notes: o.notes
@@ -515,6 +564,7 @@ export async function editUnreviewedPurchaseRequest(
   params: {
     requestId: string;
     title: string;
+    quantity?: number;
     carSystem: string;
     explanation: string;
     options: RequestOptionInput[];
@@ -526,20 +576,14 @@ export async function editUnreviewedPurchaseRequest(
   await ensureDbReady();
   const db = getDb();
 
-  const parsedOptions = params.options.map((opt, idx) => {
-    const priceCents = parseEurToCents(opt.priceEur, { allowZero: false });
-    if (priceCents === null) {
-      throw new Error(`Option #${idx + 1} has an invalid EUR price.`);
-    }
-    return {
-      sortOrder: idx,
-      label: opt.label.trim(),
-      productUrl: opt.productUrl?.trim() || null,
-      priceCents,
-      drawbacks: opt.drawbacks.trim(),
-      notes: opt.notes?.trim() || null
-    };
-  });
+  const quantity = parseRequestQuantity(params.quantity ?? 1);
+  if (quantity === null) {
+    throw new Error("Quantity must be a whole number between 1 and 100,000.");
+  }
+
+  const parsedOptions = parseBuyingOptionsForQuantity(params.options, quantity, {
+    allowZero: false
+  }).map(({ source: _source, ...row }) => row);
 
   const savedFiles: Array<{
     kind: "photo" | "document";
@@ -591,6 +635,7 @@ export async function editUnreviewedPurchaseRequest(
         .update(purchaseRequests)
         .set({
           title: params.title.trim(),
+          quantity,
           carSystem: params.carSystem.trim(),
           explanation: params.explanation.trim(),
           version: reqRow.version + 1,
@@ -651,7 +696,7 @@ export async function editUnreviewedPurchaseRequest(
         eventType: "edited_before_review",
         fromStatus: reqRow.status,
         toStatus: reqRow.status,
-        comment: `Edited request details (${parsedOptions.length} options).`
+        comment: `Edited request details (qty ${quantity}, ${parsedOptions.length} options).`
       });
 
       await recordAuditLog(tx, {
@@ -1026,9 +1071,13 @@ export async function resolveStageTwoSelection(
 
     if (!updated) throw new Error("Concurrent modification detected. Please refresh.");
 
+    const qtyNote =
+      reqRow.quantity > 1
+        ? ` (${formatEur(option.priceCents)} = ${reqRow.quantity} × ${formatEur(option.unitPriceCents)})`
+        : ` (${formatEur(option.priceCents)})`;
     const note =
       (params.comment || "").trim() ||
-      `Confirmed option "${option.label}" (${formatEur(option.priceCents)}). Relabeled as Order (Provisional Spending).`;
+      `Confirmed option "${option.label}"${qtyNote}. Relabeled as Order (Provisional Spending).`;
 
     await tx.insert(requestTimeline).values({
       requestId: reqRow.id,
@@ -1040,6 +1089,8 @@ export async function resolveStageTwoSelection(
       metadataJson: {
         optionId: option.id,
         optionLabel: option.label,
+        quantity: reqRow.quantity,
+        unitPriceCents: option.unitPriceCents,
         priceCents: option.priceCents
       }
     });
@@ -1052,7 +1103,7 @@ export async function resolveStageTwoSelection(
       targetType: "request",
       targetId: reqRow.id,
       targetCode: reqRow.requestCode,
-      summary: `Confirmed option "${option.label}" (${formatEur(option.priceCents)}) -> ${reqRow.requestCode} relabeled as Order`
+      summary: `Confirmed option "${option.label}"${qtyNote} -> ${reqRow.requestCode} relabeled as Order`
     });
   });
 }
@@ -1317,7 +1368,8 @@ export interface MasterOptionPayload {
   clientKey: string;
   label: string;
   productUrl?: string | null;
-  priceEur: string;
+  unitPriceEur?: string;
+  priceEur?: string;
   drawbacks: string;
   notes?: string | null;
 }
@@ -1328,6 +1380,7 @@ export interface MasterUpdateRequestParams {
   seasonId: string;
   department: DepartmentId;
   carSystem: string;
+  quantity?: number;
   title: string;
   explanation: string;
   status: RequestStatus;
@@ -1380,6 +1433,7 @@ async function syncRequestBuyingOptions(
       sortOrder: number;
       label: string;
       productUrl: string | null;
+      unitPriceCents: number;
       priceCents: number;
       drawbacks: string;
       notes: string | null;
@@ -1415,6 +1469,9 @@ async function syncRequestBuyingOptions(
       const diffs: string[] = [];
       if (existing.sortOrder !== opt.sortOrder) diffs.push(`order ${existing.sortOrder + 1} → ${opt.sortOrder + 1}`);
       if (existing.label !== opt.label) diffs.push(`label "${existing.label}" → "${opt.label}"`);
+      if (existing.unitPriceCents !== opt.unitPriceCents) {
+        diffs.push(`unit price ${formatEur(existing.unitPriceCents)} → ${formatEur(opt.unitPriceCents)}`);
+      }
       if (existing.priceCents !== opt.priceCents) {
         diffs.push(`price ${formatEur(existing.priceCents)} → ${formatEur(opt.priceCents)}`);
       }
@@ -1435,6 +1492,7 @@ async function syncRequestBuyingOptions(
             sortOrder: opt.sortOrder,
             label: opt.label,
             productUrl: opt.productUrl,
+            unitPriceCents: opt.unitPriceCents,
             priceCents: opt.priceCents,
             drawbacks: opt.drawbacks,
             notes: opt.notes
@@ -1450,6 +1508,7 @@ async function syncRequestBuyingOptions(
           sortOrder: opt.sortOrder,
           label: opt.label,
           productUrl: opt.productUrl,
+          unitPriceCents: opt.unitPriceCents,
           priceCents: opt.priceCents,
           drawbacks: opt.drawbacks,
           notes: opt.notes
@@ -1503,6 +1562,11 @@ export async function masterUpdatePurchaseRequest(
   }
   await ensureDbReady();
 
+  const quantity = parseRequestQuantity(params.quantity ?? 1);
+  if (quantity === null) {
+    throw new Error("Quantity must be a whole number between 1 and 100,000.");
+  }
+
   const shippingCents = parseEurToCents(params.shippingEur, { allowZero: true });
   if (shippingCents === null) throw new Error("Shipping fee must be a non-negative Euro amount.");
 
@@ -1515,22 +1579,13 @@ export async function masterUpdatePurchaseRequest(
   );
   const finalAmountCents = parseNullableEurField(params.finalAmountEur, "Final invoiced amount");
 
-  const parsedOptions = params.options.map((opt, idx) => {
-    const priceCents = parseEurToCents(opt.priceEur, { allowZero: true });
-    if (priceCents === null) {
-      throw new Error(`Option #${idx + 1} (${opt.label || "untitled"}) has an invalid EUR price.`);
-    }
-    return {
-      id: opt.id || null,
-      clientKey: opt.clientKey,
-      sortOrder: idx,
-      label: opt.label.trim(),
-      productUrl: opt.productUrl?.trim() || null,
-      priceCents,
-      drawbacks: opt.drawbacks.trim(),
-      notes: opt.notes?.trim() || null
-    };
-  });
+  const parsedOptions = parseBuyingOptionsForQuantity(params.options, quantity, {
+    allowZero: true
+  }).map(({ source, ...row }) => ({
+    ...row,
+    id: source.id || null,
+    clientKey: source.clientKey
+  }));
 
   const createdAt = parseRequiredTimestamp(params.createdAt, "Created timestamp");
   const orderedAt = parseOptionalTimestamp(params.orderedAt, "Ordered timestamp");
@@ -1662,6 +1717,7 @@ export async function masterUpdatePurchaseRequest(
           after: DEPARTMENT_MAP[params.department]?.label ?? params.department
         },
         { field: "carSystem", label: "Car System", before: reqRow.carSystem || "—", after: nextCarSystem || "—" },
+        { field: "quantity", label: "Quantity", before: String(reqRow.quantity), after: String(quantity) },
         { field: "title", label: "Title", before: reqRow.title, after: nextTitle },
         { field: "explanation", label: "Explanation", before: reqRow.explanation, after: nextExplanation },
         {
@@ -1766,6 +1822,7 @@ export async function masterUpdatePurchaseRequest(
           seasonId: params.seasonId,
           department: params.department,
           carSystem: nextCarSystem,
+          quantity,
           title: nextTitle,
           explanation: nextExplanation,
           status: params.status,

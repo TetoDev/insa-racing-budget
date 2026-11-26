@@ -27,12 +27,16 @@ import {
 import {
   formatCentsPlain,
   formatDateTime,
+  formatEur,
   fromDateTimeLocalInput,
+  parseEurToCents,
   toDateTimeLocalInput,
   toIsoDateInput
 } from "~/lib/format";
+import { computeOptionTotalCents, parseRequestQuantity } from "~/lib/workflow";
 import {
   getAttachmentKindLabel,
+  getAuditActionLabel,
   getDepartmentLabel,
   getEntryCategoryLabel,
   getEntryStatusLabel,
@@ -48,6 +52,7 @@ export interface MasterOptionItem {
   id: string;
   label: string;
   productUrl: string | null;
+  unitPriceCents: number;
   priceCents: number;
   drawbacks: string;
   notes: string | null;
@@ -59,6 +64,7 @@ export interface MasterRequestEditTarget {
   seasonId: string;
   department: DepartmentId;
   carSystem: string;
+  quantity: number;
   title: string;
   explanation: string;
   status: RequestStatus;
@@ -126,6 +132,7 @@ export function MasterEditRequestModal(props: {
   const [seasonId, setSeasonId] = createSignal("");
   const [department, setDepartment] = createSignal<DepartmentId>("powertrain");
   const [carSystem, setCarSystem] = createSignal("");
+  const [quantityStr, setQuantityStr] = createSignal("1");
   const [status, setStatus] = createSignal<RequestStatus>("pending_review");
   const [hasApproverResponse, setHasApproverResponse] = createSignal(false);
   const [title, setTitle] = createSignal("");
@@ -149,7 +156,7 @@ export function MasterEditRequestModal(props: {
       clientKey: string;
       label: string;
       productUrl: string;
-      priceEur: string;
+      unitPriceEur: string;
       drawbacks: string;
       notes: string;
     }>
@@ -168,6 +175,13 @@ export function MasterEditRequestModal(props: {
   const [err, setErr] = createSignal("");
   let newOptCounter = 0;
 
+  const computeMasterOptionTotalCents = (rawUnitEur: string): number | null => {
+    const qty = parseRequestQuantity(quantityStr());
+    const unitCents = parseEurToCents(rawUnitEur, { allowZero: true });
+    if (qty === null || unitCents === null) return null;
+    return computeOptionTotalCents(unitCents, qty);
+  };
+
   createEffect(() => {
     const r = props.open ? props.request : null;
     if (!r) return;
@@ -175,6 +189,7 @@ export function MasterEditRequestModal(props: {
     setSeasonId(r.seasonId);
     setDepartment(r.department);
     setCarSystem(r.carSystem);
+    setQuantityStr(String(r.quantity ?? 1));
     setStatus(r.status);
     setHasApproverResponse(r.hasApproverResponse);
     setTitle(r.title);
@@ -201,7 +216,7 @@ export function MasterEditRequestModal(props: {
           clientKey: o.id,
           label: o.label,
           productUrl: o.productUrl ?? "",
-          priceEur: formatCentsPlain(o.priceCents),
+          unitPriceEur: formatCentsPlain(o.unitPriceCents ?? o.priceCents),
           drawbacks: o.drawbacks,
           notes: o.notes ?? ""
         }))
@@ -252,8 +267,10 @@ export function MasterEditRequestModal(props: {
 
   function syncPriceFromSelectedOption() {
     const chosen = options.find(o => o.clientKey === selectedOptionClientKey());
-    if (chosen) {
-      setSelectedOptionPriceEur(chosen.priceEur);
+    if (!chosen) return;
+    const totalCents = computeMasterOptionTotalCents(chosen.unitPriceEur);
+    if (totalCents !== null) {
+      setSelectedOptionPriceEur(formatCentsPlain(totalCents));
     }
   }
 
@@ -261,6 +278,11 @@ export function MasterEditRequestModal(props: {
     e.preventDefault();
     const req = props.request;
     if (!req) return;
+    const qty = parseRequestQuantity(quantityStr());
+    if (qty === null) {
+      setErr(t().requests.invalidQuantityPreview);
+      return;
+    }
     setBusy(true);
     setErr("");
     try {
@@ -272,6 +294,7 @@ export function MasterEditRequestModal(props: {
           seasonId: seasonId(),
           department: department(),
           carSystem: carSystem(),
+          quantity: qty,
           title: title(),
           explanation: explanation(),
           status: status(),
@@ -293,7 +316,7 @@ export function MasterEditRequestModal(props: {
             clientKey: o.clientKey,
             label: o.label,
             productUrl: o.productUrl.trim() || null,
-            priceEur: o.priceEur,
+            unitPriceEur: o.unitPriceEur,
             drawbacks: o.drawbacks,
             notes: o.notes.trim() || null
           })),
@@ -451,17 +474,34 @@ export function MasterEditRequestModal(props: {
 
             {/* B. Title & Explanation */}
             <div class="space-y-3">
-              <div>
-                <label class="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">
-                  {t().common.title}
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={title()}
-                  onInput={e => setTitle(e.currentTarget.value)}
-                  class="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100 px-3 py-2 text-sm"
-                />
+              <div class="grid sm:grid-cols-4 gap-3">
+                <div class="sm:col-span-3">
+                  <label class="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">
+                    {t().common.title}
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={title()}
+                    onInput={e => setTitle(e.currentTarget.value)}
+                    class="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100 px-3 py-2 text-sm"
+                  />
+                </div>
+                <div>
+                  <label class="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">
+                    {t().masterModals.quantityLabel}
+                  </label>
+                  <input
+                    type="number"
+                    required
+                    min={1}
+                    max={100000}
+                    step={1}
+                    value={quantityStr()}
+                    onInput={e => setQuantityStr(e.currentTarget.value)}
+                    class="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100 px-3 py-2 text-sm tabular-nums"
+                  />
+                </div>
               </div>
               <div>
                 <label class="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">
@@ -628,12 +668,15 @@ export function MasterEditRequestModal(props: {
                   >
                     <option value="">{t().common.noneSelected}</option>
                     <For each={options}>
-                      {(opt, idx) => (
-                        <option value={opt.clientKey}>
-                          {t().masterModals.optionNumber(idx() + 1)}: {opt.label || t().common.untitled} (
-                          {opt.priceEur || "0"} €)
-                        </option>
-                      )}
+                      {(opt, idx) => {
+                        const totCents = () => computeMasterOptionTotalCents(opt.unitPriceEur);
+                        return (
+                          <option value={opt.clientKey}>
+                            {t().masterModals.optionNumber(idx() + 1)}: {opt.label || t().common.untitled} (
+                            {totCents() !== null ? formatCentsPlain(totCents()!) : (opt.unitPriceEur || "0")} €)
+                          </option>
+                        );
+                      }}
                     </For>
                   </select>
                 </div>
@@ -714,7 +757,7 @@ export function MasterEditRequestModal(props: {
                       clientKey: `new-${Date.now()}-${newOptCounter}`,
                       label: "",
                       productUrl: "",
-                      priceEur: "0.00",
+                      unitPriceEur: "0.00",
                       drawbacks: "",
                       notes: ""
                     });
@@ -767,7 +810,7 @@ export function MasterEditRequestModal(props: {
                           </button>
                         </div>
                       </div>
-                      <div class="grid sm:grid-cols-3 gap-2">
+                      <div class="grid sm:grid-cols-4 gap-2">
                         <input
                           ref={syncControlValue(() => opt.label)}
                           type="text"
@@ -777,13 +820,21 @@ export function MasterEditRequestModal(props: {
                           class="sm:col-span-2 rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100 dark:placeholder:text-slate-500 px-2.5 py-1.5 text-xs"
                         />
                         <input
-                          ref={syncControlValue(() => opt.priceEur)}
+                          ref={syncControlValue(() => opt.unitPriceEur)}
                           type="text"
                           required
-                          placeholder={t().masterModals.priceEurPlaceholder}
-                          onInput={e => setOptions(i(), "priceEur", e.currentTarget.value)}
+                          placeholder={t().masterModals.unitPricePlaceholder}
+                          onInput={e => setOptions(i(), "unitPriceEur", e.currentTarget.value)}
                           class="rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100 dark:placeholder:text-slate-500 px-2.5 py-1.5 text-xs tabular-nums"
                         />
+                        <div class="rounded border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-900 px-2.5 py-1.5 text-xs font-bold tabular-nums text-slate-800 dark:text-slate-200 flex items-center justify-end">
+                          {(() => {
+                            const tot = computeMasterOptionTotalCents(opt.unitPriceEur);
+                            return tot !== null
+                              ? t().masterModals.computedTotalLabel(formatEur(tot, locale()))
+                              : "—";
+                          })()}
+                        </div>
                       </div>
                       <input
                         ref={syncControlValue(() => opt.drawbacks)}
